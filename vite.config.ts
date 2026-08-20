@@ -5,7 +5,7 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
-    base: './',
+    base: '/giftedclass-curriculum/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
