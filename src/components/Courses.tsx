@@ -1,20 +1,26 @@
-import React, { useRef, useState } from 'react';
-import { Course, Grade, TimeSlot, Teacher, Classroom } from '../types';
+import React, { useRef, useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { Course, Grade, TimeSlot, Teacher, Classroom, Category } from '../types';
 import { Plus, Trash2, Upload, Download, Edit2, X, AlertCircle } from 'lucide-react';
 import { downloadCSV, parseCSV } from '../utils/csv';
 import { ConfirmModal } from './Dialogs';
 
 interface CoursesProps {
   courses: Course[]; setCourses: (v: Course[]) => void;
-  timeSlots: TimeSlot[]; teachers: Teacher[]; classrooms: Classroom[];
+  timeSlots: TimeSlot[]; teachers: Teacher[]; classrooms: Classroom[]; categories: Category[];
 }
 
-export default function Courses({ courses, setCourses, timeSlots, teachers, classrooms }: CoursesProps) {
+export default function Courses({ courses, setCourses, timeSlots, teachers, classrooms, categories }: CoursesProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{ message: string, onConfirm: () => void } | null>(null);
+  const [headerTarget, setHeaderTarget] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    setHeaderTarget(document.getElementById('header-actions'));
+  }, []);
 
   const days = [
     { id: 1, name: '星期一' },
@@ -30,10 +36,11 @@ export default function Courses({ courses, setCourses, timeSlots, teachers, clas
         const processed = parsed.map(p => ({
           id: p.id,
           name: p.name,
-          timeSlotIds: p.timeSlotIds ? p.timeSlotIds.split(';') : [],
-          teacherIds: p.teacherIds ? p.teacherIds.split(';') : [],
+          timeSlotIds: p.timeSlotIds ? p.timeSlotIds.split(';').filter(Boolean) : [],
+          teacherIds: p.teacherIds ? p.teacherIds.split(';').filter(Boolean) : [],
           classroomId: p.classroomId || '',
-          targetGrades: p.targetGrades ? p.targetGrades.split(';').map(Number) : []
+          targetGrades: p.targetGrades ? p.targetGrades.split(';').filter(Boolean).map(Number) : [],
+          targetCategoryIds: p.targetCategoryIds ? p.targetCategoryIds.split(';').filter(Boolean) : []
         }));
         setCourses(processed);
       });
@@ -48,19 +55,20 @@ export default function Courses({ courses, setCourses, timeSlots, teachers, clas
       timeSlotIds: c.timeSlotIds.join(';'),
       teacherIds: c.teacherIds.join(';'),
       classroomId: c.classroomId,
-      targetGrades: c.targetGrades.join(';')
+      targetGrades: c.targetGrades.join(';'),
+      targetCategoryIds: c.targetCategoryIds ? c.targetCategoryIds.join(';') : ''
     }));
-    downloadCSV(data, '課程.csv');
+    downloadCSV(data, 'courses.csv');
   };
 
   const openNewCourse = () => {
-    setEditingCourse({ id: `C${Date.now()}`, name: '', timeSlotIds: [], teacherIds: [], classroomId: '', targetGrades: [] });
+    setEditingCourse({ id: `C${Date.now()}`, name: '', timeSlotIds: [], teacherIds: [], classroomId: '', targetGrades: [], targetCategoryIds: [] });
     setSaveError(null);
     setIsModalOpen(true);
   };
 
   const openEditCourse = (course: Course) => {
-    setEditingCourse({ ...course });
+    setEditingCourse({ targetCategoryIds: [], ...course });
     setSaveError(null);
     setIsModalOpen(true);
   };
@@ -94,9 +102,9 @@ export default function Courses({ courses, setCourses, timeSlots, teachers, clas
     });
   };
 
-  const toggleArrayItem = (field: 'teacherIds' | 'targetGrades', itemValue: any) => {
+  const toggleArrayItem = (field: 'teacherIds' | 'targetGrades' | 'targetCategoryIds', itemValue: any) => {
     if (!editingCourse) return;
-    const arr = editingCourse[field] as any[];
+    const arr = (editingCourse[field] || []) as any[];
     if (arr.includes(itemValue)) {
       setEditingCourse({ ...editingCourse, [field]: arr.filter(v => v !== itemValue) });
     } else {
@@ -122,26 +130,25 @@ export default function Courses({ courses, setCourses, timeSlots, teachers, clas
     </label>
   );
 
-  return (
-    <div className="flex flex-col h-full bg-white rounded-2xl shadow-sm border border-[#E5E1D5] overflow-hidden p-6 relative">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h2 className="text-xl font-medium text-[#4A4A3A]">開課設定</h2>
-        </div>
-        <div className="flex gap-2">
-          <input type="file" accept=".csv" className="hidden" ref={fileInputRef} onChange={handleUpload} />
-          <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-4 py-1.5 border border-[#5A5A40] text-[#5A5A40] rounded-full text-sm font-medium hover:bg-[#5A5A40]/5 transition-colors">
-            <Upload size={14} />
-          </button>
-          <button onClick={handleDownload} className="flex items-center gap-2 px-4 py-1.5 border border-[#5A5A40] text-[#5A5A40] rounded-full text-sm font-medium hover:bg-[#5A5A40]/5 transition-colors">
-            <Download size={14} />
-          </button>
-          <button onClick={openNewCourse} className="flex items-center gap-2 px-4 py-1.5 bg-[#5A5A40] text-white rounded-full text-sm font-medium shadow-sm hover:bg-[#4A4A3A] transition-colors">
-            <Plus size={14} />
-          </button>
-        </div>
-      </div>
+  const actionButtons = (
+    <div className="flex gap-2">
+      <input type="file" accept=".csv" className="hidden" ref={fileInputRef} onChange={handleUpload} />
+      <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-4 py-1.5 border border-[#5A5A40] text-[#5A5A40] rounded-full text-sm font-medium hover:bg-[#5A5A40]/5 transition-colors shadow-sm">
+        <Upload size={14} />
+      </button>
+      <button onClick={handleDownload} className="flex items-center gap-2 px-4 py-1.5 border border-[#5A5A40] text-[#5A5A40] rounded-full text-sm font-medium hover:bg-[#5A5A40]/5 transition-colors shadow-sm">
+        <Download size={14} />
+      </button>
+      <button onClick={openNewCourse} className="flex items-center gap-2 px-4 py-1.5 bg-[#5A5A40] text-white rounded-full text-sm font-medium shadow-sm hover:bg-[#4A4A3A] transition-colors">
+        <Plus size={14} />
+      </button>
+    </div>
+  );
 
+  return (
+    <div className="flex flex-col h-full overflow-hidden relative min-h-0">
+      {headerTarget && createPortal(actionButtons, headerTarget)}
+      
       <div className="flex-1 overflow-auto rounded-xl border border-[#E5E1D5]">
         <table className="w-full text-left text-sm relative">
           <thead className="bg-[#F9F8F4] border-b border-[#E5E1D5] sticky top-0 z-10 shadow-sm">
@@ -212,7 +219,7 @@ export default function Courses({ courses, setCourses, timeSlots, teachers, clas
                 </div>
                 
                 <div>
-                  {renderLabel('目標年級 (可複選)', editingCourse.targetGrades.length === 0)}
+                  {renderLabel('開課年級 (可複選)', editingCourse.targetGrades.length === 0)}
                   <div className="flex flex-wrap gap-2">
                     {[7, 8, 9].map(grade => (
                       <button key={grade} onClick={() => toggleArrayItem('targetGrades', grade)} className={`px-4 py-1.5 text-sm rounded-full border transition-colors ${editingCourse.targetGrades.includes(grade as Grade) ? 'bg-[#5A5A40] border-[#5A5A40] text-white font-medium shadow-sm' : 'bg-white border-[#D9D4C7] text-[#8A8475] hover:bg-[#F9F8F4]'}`}>
@@ -223,7 +230,26 @@ export default function Courses({ courses, setCourses, timeSlots, teachers, clas
                 </div>
 
                 <div>
-                  {renderLabel('上課教室 (單選)', !editingCourse.classroomId)}
+                  {renderLabel('學生類別限制 (可複選，無選取則不限制)', false)}
+                  <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+                    {categories.map(cat => {
+                      const isSelected = editingCourse.targetCategoryIds?.includes(cat.id);
+                      return (
+                        <button 
+                          key={cat.id} 
+                          onClick={() => toggleArrayItem('targetCategoryIds', cat.id)} 
+                          className={`px-4 py-1.5 text-sm rounded-full border transition-colors ${isSelected ? 'bg-[#5A5A40] border-[#5A5A40] text-white font-medium shadow-sm' : 'bg-white border-[#D9D4C7] text-[#8A8475] hover:bg-[#F9F8F4]'}`}
+                        >
+                          {cat.name}
+                        </button>
+                      );
+                    })}
+                    {categories.length === 0 && <div className="text-sm text-[#8A8475]">無可用類別，請至資料管理新增</div>}
+                  </div>
+                </div>
+
+                <div>
+                  {renderLabel('上課教室', !editingCourse.classroomId)}
                   <select value={editingCourse.classroomId} onChange={e => setEditingCourse({ ...editingCourse, classroomId: e.target.value })} className="w-full px-3 py-2 bg-white border border-[#D9D4C7] rounded-md focus:ring-1 focus:ring-[#5A5A40] focus:border-[#5A5A40] outline-none text-sm text-[#2D2D2A]">
                     <option value="">-- 選擇教室 --</option>
                     {classrooms.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -231,7 +257,7 @@ export default function Courses({ courses, setCourses, timeSlots, teachers, clas
                 </div>
 
                 <div>
-                  {renderLabel('任課教師 (可複選)', editingCourse.teacherIds.length === 0)}
+                  {renderLabel('授課教師 (可複選)', editingCourse.teacherIds.length === 0)}
                   <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto p-3 bg-white border border-[#D9D4C7] rounded-md shadow-inner">
                     {teachers.map(teacher => (
                       <label key={teacher.id} className="flex items-center gap-2 text-sm bg-white px-2.5 py-1.5 rounded-md border border-[#E5E1D5] shadow-sm cursor-pointer hover:bg-[#F9F8F4] transition-colors">
@@ -245,7 +271,7 @@ export default function Courses({ courses, setCourses, timeSlots, teachers, clas
 
               {/* Right Column: Time Grid */}
               <div className="w-full md:w-2/3">
-                {renderLabel('上課時段 (請於表格中勾選)', editingCourse.timeSlotIds.length === 0)}
+                {renderLabel('上課時段', editingCourse.timeSlotIds.length === 0)}
                 <div className="border border-[#E5E1D5] rounded-xl overflow-hidden bg-white shadow-sm">
                   <table className="w-full text-center text-sm table-fixed">
                     <thead className="bg-[#F9F8F4] border-b border-[#E5E1D5]">

@@ -17,10 +17,16 @@ export interface Classroom {
   name: string;
 }
 
+export interface Category {
+  id: string;
+  name: string;
+}
+
 export interface Student {
   id: string;
   name: string;
   grade: Grade;
+  categoryIds?: string[];
 }
 
 export interface Course {
@@ -30,6 +36,7 @@ export interface Course {
   teacherIds: string[];
   classroomId: string;
   targetGrades: Grade[];
+  targetCategoryIds?: string[];
 }
 
 export interface Enrollment {

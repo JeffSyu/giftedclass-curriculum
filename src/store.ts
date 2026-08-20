@@ -1,17 +1,17 @@
 import { useState, useEffect } from 'react';
-import { TimeSlot, Teacher, Classroom, Student, Course, Enrollment } from './types';
+import { TimeSlot, Teacher, Classroom, Student, Course, Enrollment, Category } from './types';
 
 const defaultTimeSlots: TimeSlot[] = [
-  { id: 'early', name: '早自修', startTime: '07:50', endTime: '08:30' },
-  { id: '1', name: '第一節', startTime: '08:40', endTime: '09:25' },
-  { id: '2', name: '第二節', startTime: '09:35', endTime: '10:20' },
-  { id: '3', name: '第三節', startTime: '10:30', endTime: '11:15' },
-  { id: '4', name: '第四節', startTime: '11:25', endTime: '12:10' },
-  { id: 'lunch', name: '午休', startTime: '12:10', endTime: '13:00' },
-  { id: '5', name: '第五節', startTime: '13:00', endTime: '13:45' },
-  { id: '6', name: '第六節', startTime: '13:55', endTime: '14:40' },
-  { id: '7', name: '第七節', startTime: '14:50', endTime: '15:35' },
-  { id: '8', name: '第八節', startTime: '15:45', endTime: '16:30' }
+  { id: 'tearly', name: '早自修', startTime: '07:30', endTime: '08:15' },
+  { id: 't1', name: '第一節', startTime: '08:20', endTime: '09:05' },
+  { id: 't2', name: '第二節', startTime: '09:15', endTime: '10:00' },
+  { id: 't3', name: '第三節', startTime: '10:10', endTime: '10:55' },
+  { id: 't4', name: '第四節', startTime: '11:05', endTime: '11:50' },
+  { id: 'tlunch', name: '午休', startTime: '12:20', endTime: '13:05' },
+  { id: 't5', name: '第五節', startTime: '13:10', endTime: '13:55' },
+  { id: 't6', name: '第六節', startTime: '14:05', endTime: '14:50' },
+  { id: 't7', name: '第七節', startTime: '15:05', endTime: '15:50' },
+  { id: 't8', name: '第八節', startTime: '16:00', endTime: '16:45' }
 ];
 
 export function useAppStore() {
@@ -27,6 +27,11 @@ export function useAppStore() {
 
   const [classrooms, setClassrooms] = useState<Classroom[]>(() => {
     const saved = localStorage.getItem('classrooms');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [categories, setCategories] = useState<Category[]>(() => {
+    const saved = localStorage.getItem('categories');
     return saved ? JSON.parse(saved) : [];
   });
 
@@ -58,6 +63,10 @@ export function useAppStore() {
   }, [classrooms]);
 
   useEffect(() => {
+    localStorage.setItem('categories', JSON.stringify(categories));
+  }, [categories]);
+
+  useEffect(() => {
     localStorage.setItem('students', JSON.stringify(students));
   }, [students]);
 
@@ -73,6 +82,7 @@ export function useAppStore() {
     timeSlots, setTimeSlots,
     teachers, setTeachers,
     classrooms, setClassrooms,
+    categories, setCategories,
     students, setStudents,
     courses, setCourses,
     enrollments, setEnrollments

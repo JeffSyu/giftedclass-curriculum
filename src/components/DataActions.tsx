@@ -1,16 +1,20 @@
 import React, { useRef, useState } from 'react';
-import { X, Trash2, Download, Upload, AlertCircle } from 'lucide-react';
+import { Download, Upload, Trash2 } from 'lucide-react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { toCSVString, parseCSVString } from '../utils/csv';
 import { Grade } from '../types';
 import { ConfirmModal, AlertModal } from './Dialogs';
 
-export default function DataManager({ store, onClose }: { store: any, onClose: () => void }) {
+interface DataActionsProps {
+  store: any;
+}
+
+export default function DataActions({ store }: DataActionsProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{ message: string, onConfirm: () => void } | null>(null);
-  const [alertDialog, setAlertDialog] = useState<{ message: string, title?: string, onClose?: () => void } | null>(null);
+  const [alertDialog, setAlertDialog] = useState<{ message: string, title?: string } | null>(null);
 
   const clearCache = () => {
     setConfirmDialog({
@@ -20,14 +24,14 @@ export default function DataManager({ store, onClose }: { store: any, onClose: (
         store.setTimeSlots([]);
         store.setTeachers([]);
         store.setClassrooms([]);
+        store.setCategories([]);
         store.setStudents([]);
         store.setCourses([]);
         store.setEnrollments([]);
         setConfirmDialog(null);
         setAlertDialog({
           title: '清除成功',
-          message: '已成功清除所有暫存資料！',
-          onClose: () => onClose()
+          message: '已成功清除所有暫存資料！'
         });
       }
     });
@@ -40,7 +44,12 @@ export default function DataManager({ store, onClose }: { store: any, onClose: (
       zip.file("timeSlots.csv", toCSVString(store.timeSlots));
       zip.file("teachers.csv", toCSVString(store.teachers));
       zip.file("classrooms.csv", toCSVString(store.classrooms));
-      zip.file("students.csv", toCSVString(store.students));
+      zip.file("categories.csv", toCSVString(store.categories));
+      const studentsCSV = store.students.map((s: any) => ({
+        ...s,
+        categoryIds: s.categoryIds ? s.categoryIds.join(';') : ''
+      }));
+      zip.file("students.csv", toCSVString(studentsCSV));
       
       const coursesCSV = store.courses.map((c: any) => ({
         id: c.id,
@@ -48,7 +57,8 @@ export default function DataManager({ store, onClose }: { store: any, onClose: (
         timeSlotIds: c.timeSlotIds.join(';'),
         teacherIds: c.teacherIds.join(';'),
         classroomId: c.classroomId,
-        targetGrades: c.targetGrades.join(';')
+        targetGrades: c.targetGrades.join(';'),
+        targetCategoryIds: c.targetCategoryIds ? c.targetCategoryIds.join(';') : ''
       }));
       zip.file("courses.csv", toCSVString(coursesCSV));
       
@@ -98,21 +108,29 @@ export default function DataManager({ store, onClose }: { store: any, onClose: (
       
       const classrooms = await readCSV("classrooms.csv");
       if (classrooms) store.setClassrooms(classrooms);
+
+      const categories = await readCSV("categories.csv");
+      if (categories) store.setCategories(categories);
       
       const studentsRaw = await readCSV("students.csv");
       if (studentsRaw) {
-        store.setStudents(studentsRaw.map(s => ({ ...s, grade: Number(s.grade) as Grade })));
+        store.setStudents(studentsRaw.map((s: any) => ({ 
+          ...s, 
+          grade: Number(s.grade) as Grade,
+          categoryIds: s.categoryIds ? s.categoryIds.split(';').filter(Boolean) : []
+        })));
       }
 
       const coursesRaw = await readCSV("courses.csv");
       if (coursesRaw) {
-        const courses = coursesRaw.map(c => ({
+        const courses = coursesRaw.map((c: any) => ({
           id: c.id,
           name: c.name,
-          timeSlotIds: c.timeSlotIds ? c.timeSlotIds.split(';') : [],
-          teacherIds: c.teacherIds ? c.teacherIds.split(';') : [],
+          timeSlotIds: c.timeSlotIds ? c.timeSlotIds.split(';').filter(Boolean) : [],
+          teacherIds: c.teacherIds ? c.teacherIds.split(';').filter(Boolean) : [],
           classroomId: c.classroomId || '',
-          targetGrades: c.targetGrades ? c.targetGrades.split(';').map(Number) : []
+          targetGrades: c.targetGrades ? c.targetGrades.split(';').filter(Boolean).map(Number) : [],
+          targetCategoryIds: c.targetCategoryIds ? c.targetCategoryIds.split(';').filter(Boolean) : []
         }));
         store.setCourses(courses);
       }
@@ -125,8 +143,7 @@ export default function DataManager({ store, onClose }: { store: any, onClose: (
 
       setAlertDialog({ 
         title: '匯入成功', 
-        message: '資料已成功匯入！',
-        onClose: () => onClose()
+        message: '資料已成功匯入！'
       });
     } catch (err) {
       console.error(err);
@@ -138,46 +155,28 @@ export default function DataManager({ store, onClose }: { store: any, onClose: (
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/30 backdrop-blur-[2px] z-50 flex items-center justify-center p-6">
-        <div className="bg-[#FDFBF7] rounded-2xl shadow-xl w-full max-w-md flex flex-col overflow-hidden border border-[#D9D4C7]">
-          <div className="flex justify-between items-center p-6 border-b border-[#E5E1D5] bg-white">
-            <h3 className="text-xl font-medium text-[#4A4A3A]">資料管理</h3>
-            <button onClick={onClose} className="text-[#8A8475] hover:text-[#2D2D2A] p-2 rounded-full hover:bg-[#F2EFE9] transition-colors">
-              <X size={20} />
-            </button>
-          </div>
-
-          <div className="p-8 flex flex-col gap-4">
-            <button 
-              onClick={clearCache}
-              className="flex items-center justify-center gap-2 w-full p-4 border border-[#E8D0D0] bg-[#FAF5F5] text-[#A34A4A] rounded-xl hover:bg-[#F5EAEA] transition-colors font-medium shadow-sm"
-            >
-              <Trash2 size={20} />
-              清空暫存
-            </button>
-
-            <hr className="border-[#E5E1D5] mb-2" />
-
-            <button 
-              onClick={handleExport}
-              className="flex items-center justify-center gap-2 w-full p-4 border border-[#5A5A40] text-[#5A5A40] rounded-xl hover:bg-[#5A5A40]/5 transition-colors font-medium shadow-sm"
-            >
-              <Download size={20} />
-              匯出資料 (ZIP)
-            </button>
-
-            <input type="file" accept=".zip" className="hidden" ref={fileInputRef} onChange={handleImport} />
-            <button 
-              onClick={() => !loading && fileInputRef.current?.click()}
-              className={`flex items-center justify-center gap-2 w-full p-4 bg-[#5A5A40] text-white rounded-xl transition-colors font-medium shadow-sm ${loading ? 'opacity-70 cursor-not-allowed' : 'hover:bg-[#4A4A3A]'}`}
-            >
-              <Upload size={20} />
-              {loading ? '匯入中...' : '匯入資料 (ZIP)'}
-            </button>
-          </div>
-        </div>
+      <div className="flex items-center gap-2">
+        <button 
+          onClick={handleExport}
+          className="flex items-center gap-1.5 px-3 py-1.5 border border-[#5A5A40] text-[#5A5A40] rounded-md text-sm font-medium hover:bg-[#5A5A40]/5 transition-colors shadow-sm"
+        >
+          <Download size={12} /> 備份
+        </button>
+        <input type="file" accept=".zip" className="hidden" ref={fileInputRef} onChange={handleImport} />
+        <button 
+          onClick={() => !loading && fileInputRef.current?.click()}
+          className={`flex items-center gap-1.5 px-3 py-1.5 bg-[#5A5A40] text-white rounded-md text-sm font-medium shadow-sm transition-colors ${loading ? 'opacity-70 cursor-not-allowed' : 'hover:bg-[#4A4A3A]'}`}
+        >
+          <Upload size={12} /> {loading ? '處理中' : '匯入備份'}
+        </button>
+        <button 
+          onClick={clearCache}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FAF5F5] text-[#A34A4A] border border-[#E8D0D0] rounded-md text-sm font-medium shadow-sm hover:bg-[#F5EAEA] transition-colors ml-2"
+        >
+          <Trash2 size={12} /> 清理暫存
+        </button>
       </div>
-      
+
       {confirmDialog && (
         <ConfirmModal 
           message={confirmDialog.message} 
@@ -185,15 +184,12 @@ export default function DataManager({ store, onClose }: { store: any, onClose: (
           onCancel={() => setConfirmDialog(null)} 
         />
       )}
-      
+
       {alertDialog && (
         <AlertModal 
           title={alertDialog.title} 
           message={alertDialog.message} 
-          onClose={() => {
-            if (alertDialog.onClose) alertDialog.onClose();
-            setAlertDialog(null);
-          }} 
+          onClose={() => setAlertDialog(null)} 
         />
       )}
     </>

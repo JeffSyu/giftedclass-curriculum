@@ -18,7 +18,20 @@ export default function EnrollmentView({ students, courses, enrollments, setEnro
   // Courses available for this student's grade
   const availableCourses = useMemo(() => {
     if (!selectedStudent) return [];
-    return courses.filter(c => c.targetGrades.includes(selectedStudent.grade));
+    return courses.filter(c => {
+      // Check grade (convert to strings for safe comparison in case of corrupted local storage state)
+      const safeTargetGrades = c.targetGrades.map(String);
+      if (!safeTargetGrades.includes(String(selectedStudent.grade))) return false;
+      
+      const validTargetCategoryIds = (c.targetCategoryIds || []).filter(Boolean);
+      if (validTargetCategoryIds.length > 0) {
+        const studentCategories = (selectedStudent.categoryIds || []).filter(Boolean);
+        const hasMatchingCategory = validTargetCategoryIds.some(catId => studentCategories.includes(catId));
+        if (!hasMatchingCategory) return false;
+      }
+      
+      return true;
+    });
   }, [selectedStudent, courses]);
 
   // Current student's enrollment record
@@ -69,11 +82,6 @@ export default function EnrollmentView({ students, courses, enrollments, setEnro
 
   return (
     <div className="flex flex-col h-full bg-white rounded-2xl shadow-sm border border-[#E5E1D5] overflow-hidden p-6">
-      <div className="mb-6">
-        <h2 className="text-xl font-medium text-[#4A4A3A]">學生選課設定</h2>
-        <p className="text-sm text-[#8A8475] mt-1">為個別學生安排課程，系統將自動偵測衝堂風險並篩選符合年級的課程</p>
-      </div>
-
       <div className="flex flex-col md:flex-row gap-6 flex-1 min-h-0">
         {/* Left Panel: Student Select & Course List */}
         <div className="w-full md:w-1/3 flex flex-col gap-4">
