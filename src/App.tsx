@@ -11,6 +11,7 @@ import EnrollmentView from './components/Enrollment';
 import CourseAssignment from './components/CourseAssignment';
 import ExportView from './components/Export';
 import DataManagerView from './components/DataManagerView';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Calendar, BookCheck as CheckClass, BookCopy, UsersRound , Sheet, Settings, UserCheck } from 'lucide-react';
 
 import DataActions from './components/DataActions';
@@ -108,42 +109,44 @@ export default function App() {
           </div>
         </header>
         <div className="flex-1 min-h-0 p-8 overflow-hidden flex flex-col">
-          {activeTab === 'data' && (
-            <DataManagerView store={store} />
-          )}
-          {activeTab === 'students' && (
-            <Students 
-              students={store.students} setStudents={store.setStudents}
-              categories={store.categories}
-            />
-          )}
-          {activeTab === 'courses' && (
-            <Courses 
-              courses={store.courses} setCourses={store.setCourses}
-              timeSlots={store.timeSlots} teachers={store.teachers} classrooms={store.classrooms}
-              categories={store.categories}
-            />
-          )}
-          {activeTab === 'enrollment' && (
-            <EnrollmentView 
-              students={store.students} courses={store.courses} 
-              enrollments={store.enrollments} setEnrollments={store.setEnrollments}
-              timeSlots={store.timeSlots}
-            />
-          )}
-          {activeTab === 'assignment' && (
-            <CourseAssignment 
-              students={store.students} courses={store.courses} 
-              enrollments={store.enrollments} setEnrollments={store.setEnrollments}
-              timeSlots={store.timeSlots}
-            />
-          )}
-          {activeTab === 'export' && (
-            <ExportView 
-              students={store.students} teachers={store.teachers} classrooms={store.classrooms}
-              courses={store.courses} enrollments={store.enrollments} timeSlots={store.timeSlots}
-            />
-          )}
+          <ErrorBoundary>
+            {activeTab === 'data' && (
+              <DataManagerView store={store} />
+            )}
+            {activeTab === 'students' && (
+              <Students 
+                students={store.students} setStudents={store.setStudents}
+                categories={store.categories}
+              />
+            )}
+            {activeTab === 'courses' && (
+              <Courses 
+                courses={store.courses} setCourses={store.setCourses}
+                timeSlots={store.timeSlots} teachers={store.teachers} classrooms={store.classrooms}
+                categories={store.categories}
+              />
+            )}
+            {activeTab === 'enrollment' && (
+              <EnrollmentView 
+                students={store.students} courses={store.courses} 
+                enrollments={store.enrollments} setEnrollments={store.setEnrollments}
+                timeSlots={store.timeSlots}
+              />
+            )}
+            {activeTab === 'assignment' && (
+              <CourseAssignment 
+                students={store.students} courses={store.courses} 
+                enrollments={store.enrollments} setEnrollments={store.setEnrollments}
+                timeSlots={store.timeSlots}
+              />
+            )}
+            {activeTab === 'export' && (
+              <ExportView 
+                students={store.students} teachers={store.teachers} classrooms={store.classrooms}
+                courses={store.courses} enrollments={store.enrollments} timeSlots={store.timeSlots}
+              />
+            )}
+          </ErrorBoundary>
         </div>
       </main>
     </div>

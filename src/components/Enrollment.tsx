@@ -13,14 +13,18 @@ interface EnrollmentProps {
 export default function EnrollmentView({ students, courses, enrollments, setEnrollments, timeSlots }: EnrollmentProps) {
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
 
-  const selectedStudent = students.find(s => s.id === selectedStudentId);
+  const safeStudents = students || [];
+  const safeCourses = courses || [];
+  const safeEnrollments = Array.isArray(enrollments) ? enrollments : [];
+
+  const selectedStudent = safeStudents.find(s => s.id === selectedStudentId);
   
   // Courses available for this student's grade
   const availableCourses = useMemo(() => {
     if (!selectedStudent) return [];
-    return courses.filter(c => {
+    return safeCourses.filter(c => {
       // Check grade (convert to strings for safe comparison in case of corrupted local storage state)
-      const safeTargetGrades = c.targetGrades.map(String);
+      const safeTargetGrades = (c.targetGrades || []).map(String);
       if (!safeTargetGrades.includes(String(selectedStudent.grade))) return false;
       
       const validTargetCategoryIds = (c.targetCategoryIds || []).filter(Boolean);
@@ -32,21 +36,22 @@ export default function EnrollmentView({ students, courses, enrollments, setEnro
       
       return true;
     });
-  }, [selectedStudent, courses]);
+  }, [selectedStudent, safeCourses]);
 
   // Current student's enrollment record
   const currentEnrollment = useMemo(() => {
-    return enrollments.find(e => e.studentId === selectedStudentId) || { studentId: selectedStudentId, courseIds: [] };
-  }, [enrollments, selectedStudentId]);
+    return safeEnrollments.find(e => e.studentId === selectedStudentId) || { studentId: selectedStudentId, courseIds: [] };
+  }, [safeEnrollments, selectedStudentId]);
 
   // Calculate conflicts
   const conflicts = useMemo(() => {
     if (!selectedStudent) return [];
-    const selectedCourses = courses.filter(c => currentEnrollment.courseIds.includes(c.id));
+    const courseIds = currentEnrollment.courseIds || [];
+    const selectedCourses = safeCourses.filter(c => courseIds.includes(c.id));
     const slotMap = new Map<string, Course[]>(); // timeSlotId -> courses
     
     selectedCourses.forEach(course => {
-      course.timeSlotIds.forEach(slotId => {
+      (course.timeSlotIds || []).forEach(slotId => {
         const existing = slotMap.get(slotId) || [];
         existing.push(course);
         slotMap.set(slotId, existing);
@@ -60,22 +65,24 @@ export default function EnrollmentView({ students, courses, enrollments, setEnro
       }
     });
     return conflictList;
-  }, [currentEnrollment.courseIds, courses, selectedStudent]);
+  }, [currentEnrollment.courseIds, safeCourses, selectedStudent]);
 
   const toggleCourse = (courseId: string) => {
     if (!selectedStudentId) return;
-    const newCourseIds = currentEnrollment.courseIds.includes(courseId)
-      ? currentEnrollment.courseIds.filter(id => id !== courseId)
-      : [...currentEnrollment.courseIds, courseId];
+    const currentCourseIds = currentEnrollment.courseIds || [];
+    const newCourseIds = currentCourseIds.includes(courseId)
+      ? currentCourseIds.filter(id => id !== courseId)
+      : [...currentCourseIds, courseId];
     
     const newEnrollment = { studentId: selectedStudentId, courseIds: newCourseIds };
     
     setEnrollments((prev) => {
-      const exists = prev.some(e => e.studentId === selectedStudentId);
+      const safePrev = Array.isArray(prev) ? prev : [];
+      const exists = safePrev.some(e => e.studentId === selectedStudentId);
       if (exists) {
-        return prev.map(e => e.studentId === selectedStudentId ? newEnrollment : e);
+        return safePrev.map(e => e.studentId === selectedStudentId ? newEnrollment : e);
       } else {
-        return [...prev, newEnrollment];
+        return [...safePrev, newEnrollment];
       }
     });
   };
@@ -179,12 +186,15 @@ export default function EnrollmentView({ students, courses, enrollments, setEnro
 
 // Helper component for schedule preview
 function StudentSchedulePreview({ courseIds, courses, timeSlots }: { courseIds: string[], courses: Course[], timeSlots: TimeSlot[] }) {
-  const selectedCourses = courses.filter(c => courseIds.includes(c.id));
+  const safeCourseIds = courseIds || [];
+  const safeCourses = courses || [];
+  const safeTimeSlots = timeSlots || [];
+  const selectedCourses = safeCourses.filter(c => safeCourseIds.includes(c.id));
   
   // Map timeSlotId (day_period) -> courses
   const slotMap = new Map<string, Course[]>();
   selectedCourses.forEach(course => {
-    course.timeSlotIds.forEach(slotId => {
+    (course.timeSlotIds || []).forEach(slotId => {
       const existing = slotMap.get(slotId) || [];
       existing.push(course);
       slotMap.set(slotId, existing);
@@ -205,7 +215,7 @@ function StudentSchedulePreview({ courseIds, courses, timeSlots }: { courseIds: 
         </tr>
       </thead>
       <tbody>
-        {timeSlots.map(ts => (
+        {safeTimeSlots.map(ts => (
           <tr key={ts.id}>
             <td className="border border-[#E5E1D5] p-2 bg-[#FDFBF7] text-center">
               <div className="font-bold text-[#8A8475]">{ts.name}</div>

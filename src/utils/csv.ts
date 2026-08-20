@@ -16,7 +16,8 @@ export function downloadCSV(data: any[], filename: string) {
 }
 
 export function toCSVString(data: any[]): string {
-  return Papa.unparse(data);
+  if (!data || data.length === 0) return '\uFEFF';
+  return '\uFEFF' + Papa.unparse(data);
 }
 
 export function parseCSV<T>(file: File, callback: (data: T[]) => void) {
@@ -30,7 +31,8 @@ export function parseCSV<T>(file: File, callback: (data: T[]) => void) {
 }
 
 export function parseCSVString<T>(csvString: string): T[] {
-  const results = Papa.parse(csvString, {
+  const cleanString = csvString.replace(/^\uFEFF/, '');
+  const results = Papa.parse(cleanString, {
     header: true,
     skipEmptyLines: true,
   });

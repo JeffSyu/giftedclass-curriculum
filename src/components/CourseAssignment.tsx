@@ -13,14 +13,19 @@ interface CourseAssignmentProps {
 export default function CourseAssignment({ students, courses, enrollments, setEnrollments, timeSlots }: CourseAssignmentProps) {
   const [selectedCourseId, setSelectedCourseId] = useState<string>('');
 
-  const selectedCourse = courses.find(c => c.id === selectedCourseId);
+  const safeStudents = students || [];
+  const safeCourses = courses || [];
+  const safeEnrollments = Array.isArray(enrollments) ? enrollments : [];
+  const safeTimeSlots = timeSlots || [];
+
+  const selectedCourse = safeCourses.find(c => c.id === selectedCourseId);
   
   // Students available for this course (matching grade and categories)
   const availableStudents = useMemo(() => {
     if (!selectedCourse) return [];
-    return students.filter(s => {
+    return safeStudents.filter(s => {
       // Check grade (convert to strings for safe comparison in case of corrupted local storage state)
-      const safeTargetGrades = selectedCourse.targetGrades.map(String);
+      const safeTargetGrades = (selectedCourse.targetGrades || []).map(String);
       if (!safeTargetGrades.includes(String(s.grade))) return false;
       
       // Check category restrictions if any
@@ -33,28 +38,30 @@ export default function CourseAssignment({ students, courses, enrollments, setEn
       
       return true;
     });
-  }, [selectedCourse, students]);
+  }, [selectedCourse, safeStudents]);
 
   const toggleStudent = (studentId: string) => {
     if (!selectedCourseId) return;
     
     setEnrollments((prev) => {
-      const existingRecordIndex = prev.findIndex(e => e.studentId === studentId);
+      const safePrev = Array.isArray(prev) ? prev : [];
+      const existingRecordIndex = safePrev.findIndex(e => e.studentId === studentId);
       
       if (existingRecordIndex >= 0) {
-        const existingRecord = prev[existingRecordIndex];
-        const hasCourse = existingRecord.courseIds.includes(selectedCourseId);
+        const existingRecord = safePrev[existingRecordIndex];
+        const currentCourseIds = existingRecord.courseIds || [];
+        const hasCourse = currentCourseIds.includes(selectedCourseId);
         const newCourseIds = hasCourse
-          ? existingRecord.courseIds.filter(id => id !== selectedCourseId)
-          : [...existingRecord.courseIds, selectedCourseId];
+          ? currentCourseIds.filter(id => id !== selectedCourseId)
+          : [...currentCourseIds, selectedCourseId];
         
         const newRecord = { ...existingRecord, courseIds: newCourseIds };
-        const newEnrollments = [...prev];
+        const newEnrollments = [...safePrev];
         newEnrollments[existingRecordIndex] = newRecord;
         return newEnrollments;
       } else {
         // Create new record for student
-        return [...prev, { studentId, courseIds: [selectedCourseId] }];
+        return [...safePrev, { studentId, courseIds: [selectedCourseId] }];
       }
     });
   };
@@ -64,17 +71,19 @@ export default function CourseAssignment({ students, courses, enrollments, setEn
   const studentConflicts = useMemo(() => {
     if (!selectedCourse) return new Map<string, Course[]>();
     const conflictMap = new Map<string, Course[]>();
+    const courseTimeSlots = selectedCourse.timeSlotIds || [];
     
     availableStudents.forEach(student => {
-      const currentEnrollment = enrollments.find(e => e.studentId === student.id);
+      const currentEnrollment = safeEnrollments.find(e => e.studentId === student.id);
       if (!currentEnrollment) return;
       
+      const enrolledCourseIds = currentEnrollment.courseIds || [];
       // Other courses the student is taking
-      const otherCourses = courses.filter(c => c.id !== selectedCourse.id && currentEnrollment.courseIds.includes(c.id));
+      const otherCourses = safeCourses.filter(c => c.id !== selectedCourse.id && enrolledCourseIds.includes(c.id));
       
       // Check if any of those courses share a time slot with the selected course
       const conflictingOtherCourses = otherCourses.filter(otherC => 
-        otherC.timeSlotIds.some(slotId => selectedCourse.timeSlotIds.includes(slotId))
+        (otherC.timeSlotIds || []).some(slotId => courseTimeSlots.includes(slotId))
       );
       
       if (conflictingOtherCourses.length > 0) {
@@ -83,7 +92,7 @@ export default function CourseAssignment({ students, courses, enrollments, setEn
     });
     
     return conflictMap;
-  }, [selectedCourse, availableStudents, enrollments, courses]);
+  }, [selectedCourse, availableStudents, safeEnrollments, safeCourses]);
 
   return (
     <div className="flex flex-col h-full bg-white rounded-2xl shadow-sm border border-[#E5E1D5] overflow-hidden p-6">
@@ -109,15 +118,15 @@ export default function CourseAssignment({ students, courses, enrollments, setEn
               </div>
               <div className="text-sm text-[#2D2D2A]">
                 <span className="text-[#8A8475] inline-block w-20">開課年級：</span>
-                <span>{selectedCourse.targetGrades.join(', ')} 年級</span>
+                <span>{(selectedCourse.targetGrades || []).join(', ')} 年級</span>
               </div>
               <div className="text-sm text-[#2D2D2A] flex items-start gap-0">
                 <span className="text-[#8A8475] inline-block w-20 shrink-0">時段：</span>
                 <span className="flex-1 break-words">
-                  {selectedCourse.timeSlotIds.map(slotId => {
+                  {(selectedCourse.timeSlotIds || []).map(slotId => {
                     const [dStr, pId] = slotId.split('_');
                     const dayNames = ['', '星期一', '星期二', '星期三', '星期四', '星期五'];
-                    const ts = timeSlots.find(t => t.id === pId);
+                    const ts = safeTimeSlots.find(t => t.id === pId);
                     return `${dayNames[Number(dStr)] || ''} ${ts?.name || ''}`;
                   }).join('、') || '尚未安排'}
                 </span>
@@ -125,7 +134,7 @@ export default function CourseAssignment({ students, courses, enrollments, setEn
               <div className="text-sm text-[#2D2D2A] pt-3 mt-1 border-t border-[#E5E1D5] flex justify-between items-center font-medium">
                 <span>目前選課人數</span>
                 <span className="bg-white border border-[#D9D4C7] px-2 py-0.5 rounded-full text-[#5A5A40]">
-                  {enrollments.filter(e => e.courseIds.includes(selectedCourse.id)).length} 人
+                  {safeEnrollments.filter(e => (e.courseIds || []).includes(selectedCourse.id)).length} 人
                 </span>
               </div>
             </div>

@@ -1,5 +1,24 @@
-import { useState, useEffect } from 'react';
+import { create } from 'zustand';
 import { TimeSlot, Teacher, Classroom, Student, Course, Enrollment, Category } from './types';
+
+type Setter<T> = (value: T | ((prev: T) => T)) => void;
+
+interface AppState {
+  timeSlots: TimeSlot[];
+  setTimeSlots: Setter<TimeSlot[]>;
+  teachers: Teacher[];
+  setTeachers: Setter<Teacher[]>;
+  classrooms: Classroom[];
+  setClassrooms: Setter<Classroom[]>;
+  categories: Category[];
+  setCategories: Setter<Category[]>;
+  students: Student[];
+  setStudents: Setter<Student[]>;
+  courses: Course[];
+  setCourses: Setter<Course[]>;
+  enrollments: Enrollment[];
+  setEnrollments: Setter<Enrollment[]>;
+}
 
 const defaultTimeSlots: TimeSlot[] = [
   { id: 'tearly', name: '早自修', startTime: '07:30', endTime: '08:15' },
@@ -14,77 +33,55 @@ const defaultTimeSlots: TimeSlot[] = [
   { id: 't8', name: '第八節', startTime: '16:00', endTime: '16:45' }
 ];
 
-export function useAppStore() {
-  const [timeSlots, setTimeSlots] = useState<TimeSlot[]>(() => {
-    const saved = localStorage.getItem('timeSlots');
-    return saved ? JSON.parse(saved) : defaultTimeSlots;
+const loadFromStorage = <T,>(key: string, defaultValue: T): T => {
+  try {
+    const saved = localStorage.getItem(key);
+    if (!saved || saved === 'undefined' || saved === 'null') return defaultValue;
+    const parsed = JSON.parse(saved);
+    if (Array.isArray(defaultValue) && !Array.isArray(parsed)) return defaultValue;
+    return parsed;
+  } catch (e) {
+    return defaultValue;
+  }
+};
+
+const createSetter = <T,>(key: string, isArray: boolean = true) => (
+  set: (fn: (state: AppState) => Partial<AppState>) => void,
+  prop: keyof AppState
+) => (value: T | ((prev: T) => T)) => {
+  set((state) => {
+    const prev = state[prop] as unknown as T;
+    const next = typeof value === 'function' ? (value as (p: T) => T)(prev) : value;
+    const safeNext = isArray && !Array.isArray(next) ? ([] as unknown as T) : next;
+    try {
+      localStorage.setItem(key, JSON.stringify(safeNext));
+    } catch (e) {
+      console.error(`Failed to save ${key} to localStorage:`, e);
+    }
+    return { [prop]: safeNext } as Partial<AppState>;
   });
+};
 
-  const [teachers, setTeachers] = useState<Teacher[]>(() => {
-    const saved = localStorage.getItem('teachers');
-    return saved ? JSON.parse(saved) : [];
-  });
+export const useAppStore = create<AppState>((set) => ({
+  timeSlots: loadFromStorage('timeSlots', defaultTimeSlots),
+  setTimeSlots: (value) => createSetter<TimeSlot[]>('timeSlots', true)(set, 'timeSlots')(value),
+  
+  teachers: loadFromStorage('teachers', []),
+  setTeachers: (value) => createSetter<Teacher[]>('teachers', true)(set, 'teachers')(value),
+  
+  classrooms: loadFromStorage('classrooms', []),
+  setClassrooms: (value) => createSetter<Classroom[]>('classrooms', true)(set, 'classrooms')(value),
+  
+  categories: loadFromStorage('categories', []),
+  setCategories: (value) => createSetter<Category[]>('categories', true)(set, 'categories')(value),
+  
+  students: loadFromStorage('students', []),
+  setStudents: (value) => createSetter<Student[]>('students', true)(set, 'students')(value),
+  
+  courses: loadFromStorage('courses', []),
+  setCourses: (value) => createSetter<Course[]>('courses', true)(set, 'courses')(value),
+  
+  enrollments: loadFromStorage('enrollments', []),
+  setEnrollments: (value) => createSetter<Enrollment[]>('enrollments', true)(set, 'enrollments')(value),
+}));
 
-  const [classrooms, setClassrooms] = useState<Classroom[]>(() => {
-    const saved = localStorage.getItem('classrooms');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [categories, setCategories] = useState<Category[]>(() => {
-    const saved = localStorage.getItem('categories');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [students, setStudents] = useState<Student[]>(() => {
-    const saved = localStorage.getItem('students');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [courses, setCourses] = useState<Course[]>(() => {
-    const saved = localStorage.getItem('courses');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [enrollments, setEnrollments] = useState<Enrollment[]>(() => {
-    const saved = localStorage.getItem('enrollments');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  useEffect(() => {
-    localStorage.setItem('timeSlots', JSON.stringify(timeSlots));
-  }, [timeSlots]);
-
-  useEffect(() => {
-    localStorage.setItem('teachers', JSON.stringify(teachers));
-  }, [teachers]);
-
-  useEffect(() => {
-    localStorage.setItem('classrooms', JSON.stringify(classrooms));
-  }, [classrooms]);
-
-  useEffect(() => {
-    localStorage.setItem('categories', JSON.stringify(categories));
-  }, [categories]);
-
-  useEffect(() => {
-    localStorage.setItem('students', JSON.stringify(students));
-  }, [students]);
-
-  useEffect(() => {
-    localStorage.setItem('courses', JSON.stringify(courses));
-  }, [courses]);
-
-  useEffect(() => {
-    localStorage.setItem('enrollments', JSON.stringify(enrollments));
-  }, [enrollments]);
-
-  return {
-    timeSlots, setTimeSlots,
-    teachers, setTeachers,
-    classrooms, setClassrooms,
-    categories, setCategories,
-    students, setStudents,
-    courses, setCourses,
-    enrollments, setEnrollments
-  };
-}
