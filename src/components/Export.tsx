@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Student, Teacher, Classroom, Course, Enrollment, TimeSlot } from '../types';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
-import { Download, Eye, X } from 'lucide-react';
+import { Download, Eye, X, FileSpreadsheet, FileText, Loader2 } from 'lucide-react';
 import { useAppStore } from '../store';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 interface ExportProps {
   students: Student[];
@@ -41,6 +43,11 @@ export default function ExportView({ students, teachers, classrooms, courses, en
   });
 
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState(false);
+  const [isExportingPDF, setIsExportingPDF] = useState(false);
+  const [pdfProgress, setPdfProgress] = useState<string>('');
+
+  const pdfContainerRef = useRef<HTMLDivElement>(null);
 
   // Need categories for formatting
   const store = useAppStore();
@@ -58,12 +65,12 @@ export default function ExportView({ students, teachers, classrooms, courses, en
   const formatCourseInfo = (c: Course) => {
     const parts = [];
     if (infoOptions.courseName) parts.push(c.name);
-    if (infoOptions.grade) parts.push(`${c.targetGrades.join(',')}年級`);
+    if (infoOptions.grade) parts.push(`${(c.targetGrades || []).join(',')}年級`);
     if (infoOptions.category && c.targetCategoryIds && c.targetCategoryIds.length > 0) {
       const catNames = c.targetCategoryIds.map(cid => categories.find(cat => cat.id === cid)?.name).filter(Boolean);
       if (catNames.length > 0) parts.push(`(${catNames.join(',')})`);
     }
-    if (infoOptions.teacher && c.teacherIds.length > 0) {
+    if (infoOptions.teacher && c.teacherIds && c.teacherIds.length > 0) {
       const tNames = c.teacherIds.map(tid => teachers.find(t => t.id === tid)?.name).filter(Boolean);
       if (tNames.length > 0) parts.push(`${tNames.join(',')}`);
     }
@@ -79,7 +86,7 @@ export default function ExportView({ students, teachers, classrooms, courses, en
     const slotMap = new Map<string, string[]>();
     coursesForEntity.forEach(c => {
       const formatted = formatCourseInfo(c);
-      c.timeSlotIds.forEach(sid => {
+      (c.timeSlotIds || []).forEach(sid => {
         const existing = slotMap.get(sid) || [];
         existing.push(formatted);
         slotMap.set(sid, existing);
@@ -89,7 +96,7 @@ export default function ExportView({ students, teachers, classrooms, courses, en
     const headers = ['節次', '時間', ...dayNames];
     const rows: string[][] = [];
     
-    timeSlots.forEach(ts => {
+    (timeSlots || []).forEach(ts => {
       const row = [ts.name, `${ts.startTime} - ${ts.endTime}`];
       days.forEach(d => {
         const slotKey = `${d}_${ts.id}`;
@@ -109,6 +116,57 @@ export default function ExportView({ students, teachers, classrooms, courses, en
       rows,
       footer: showEntityName ? `${entityTypeLabel}：${entityName}` : undefined
     };
+  };
+
+  const getAllExportGridData = () => {
+    const result: { title: string; filename: string; gridData: ReturnType<typeof generateGridData> }[] = [];
+    
+    if (exportType === 'student') {
+      const targetStudents = students.filter(s => selectedIds.includes(s.id));
+      targetStudents.forEach(student => {
+        const studentCourses = courses.filter(c => {
+          const enrollment = enrollments.find(e => e.studentId === student.id);
+          return (enrollment?.courseIds || []).includes(c.id);
+        });
+        const gridData = generateGridData(studentCourses, student.name, '學生');
+        result.push({
+          title: student.name || student.id,
+          filename: student.name || student.id,
+          gridData
+        });
+      });
+    } else if (exportType === 'teacher') {
+      const targetTeachers = teachers.filter(t => selectedIds.includes(t.id));
+      targetTeachers.forEach(teacher => {
+        const teacherCourses = courses.filter(c => (c.teacherIds || []).includes(teacher.id));
+        const gridData = generateGridData(teacherCourses, teacher.name, '教師');
+        result.push({
+          title: teacher.name || teacher.id,
+          filename: teacher.name || teacher.id,
+          gridData
+        });
+      });
+    } else if (exportType === 'classroom') {
+      const targetClassrooms = classrooms.filter(c => selectedIds.includes(c.id));
+      targetClassrooms.forEach(classroom => {
+        const classroomCourses = courses.filter(c => c.classroomId === classroom.id);
+        const gridData = generateGridData(classroomCourses, classroom.name, '教室');
+        result.push({
+          title: classroom.name || classroom.id,
+          filename: classroom.name || classroom.id,
+          gridData
+        });
+      });
+    } else if (exportType === 'grade') {
+      const gradeCourses = courses.filter(c => (c.targetGrades || []).includes(selectedGrade as any));
+      const gridData = generateGridData(gradeCourses, `${selectedGrade}年級總表`, '年級');
+      result.push({
+        title: `${selectedGrade}年級總表`,
+        filename: `${selectedGrade}年級總表`,
+        gridData
+      });
+    }
+    return result;
   };
 
   const buildWorksheet = (worksheet: ExcelJS.Worksheet, gridData: any) => {
@@ -182,82 +240,99 @@ export default function ExportView({ students, teachers, classrooms, courses, en
 
   const getSafeSheetName = (name: string) => name.replace(/[\\/?*[\]]/g, '').substring(0, 31);
 
-  const handleExport = async () => {
+  const handleExportExcel = async () => {
+    setIsDownloadMenuOpen(false);
     const workbook = new ExcelJS.Workbook();
-    
-    if (exportType === 'student') {
-      const targetStudents = students.filter(s => selectedIds.includes(s.id));
-      targetStudents.forEach(student => {
-        const studentCourses = courses.filter(c => {
-          const enrollment = enrollments.find(e => e.studentId === student.id);
-          return enrollment?.courseIds.includes(c.id);
-        });
-        const gridData = generateGridData(studentCourses, student.name, '學生');
-        const sheetName = getSafeSheetName(student.name || student.id);
-        const ws = workbook.addWorksheet(sheetName || 'Sheet');
-        buildWorksheet(ws, gridData);
-      });
-    } 
-    else if (exportType === 'teacher') {
-      const targetTeachers = teachers.filter(t => selectedIds.includes(t.id));
-      targetTeachers.forEach(teacher => {
-        const teacherCourses = courses.filter(c => c.teacherIds.includes(teacher.id));
-        const gridData = generateGridData(teacherCourses, teacher.name, '教師');
-        const sheetName = getSafeSheetName(teacher.name || teacher.id);
-        const ws = workbook.addWorksheet(sheetName || 'Sheet');
-        buildWorksheet(ws, gridData);
-      });
-    } 
-    else if (exportType === 'classroom') {
-      const targetClassrooms = classrooms.filter(c => selectedIds.includes(c.id));
-      targetClassrooms.forEach(classroom => {
-        const classroomCourses = courses.filter(c => c.classroomId === classroom.id);
-        const gridData = generateGridData(classroomCourses, classroom.name, '教室');
-        const sheetName = getSafeSheetName(classroom.name || classroom.id);
-        const ws = workbook.addWorksheet(sheetName || 'Sheet');
-        buildWorksheet(ws, gridData);
-      });
-    } 
-    else if (exportType === 'grade') {
-      const gradeCourses = courses.filter(c => c.targetGrades.includes(selectedGrade as any));
-      const gridData = generateGridData(gradeCourses, `${selectedGrade}年級總表`, '年級');
-      const sheetName = getSafeSheetName(`${selectedGrade}年級總表`);
+    const exportItems = getAllExportGridData();
+
+    if (exportItems.length === 0) return;
+
+    exportItems.forEach(item => {
+      const sheetName = getSafeSheetName(item.filename || 'Sheet');
       const ws = workbook.addWorksheet(sheetName);
-      buildWorksheet(ws, gridData);
-    }
+      buildWorksheet(ws, item.gridData);
+    });
 
     const buffer = await workbook.xlsx.writeBuffer();
-    saveAs(new Blob([buffer]), `課表匯出_${new Date().getTime()}.xlsx`);
+    const fileName = exportItems.length === 1 
+      ? `${exportItems[0].filename}_課表.xlsx` 
+      : `課表匯出_${exportType}_${new Date().getTime()}.xlsx`;
+    saveAs(new Blob([buffer]), fileName);
   };
 
-  const renderPreview = () => {
-    let gridData = null;
-    if (exportType === 'grade') {
-      const gradeCourses = courses.filter(c => c.targetGrades.includes(selectedGrade as any));
-      gridData = generateGridData(gradeCourses, `${selectedGrade}年級總表`, '年級');
-    } else if (selectedIds.length > 0) {
-      const id = selectedIds[0];
-      if (exportType === 'student') {
-        const student = students.find(s => s.id === id)!;
-        const studentCourses = courses.filter(c => enrollments.find(e => e.studentId === student.id)?.courseIds.includes(c.id));
-        gridData = generateGridData(studentCourses, student.name, '學生');
+  const handleExportPDF = async () => {
+    setIsDownloadMenuOpen(false);
+    const exportItems = getAllExportGridData();
+    if (exportItems.length === 0) return;
+
+    setIsExportingPDF(true);
+    setPdfProgress('準備中...');
+
+    try {
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      const container = pdfContainerRef.current;
+      if (!container) throw new Error('PDF render container not found');
+
+      for (let i = 0; i < exportItems.length; i++) {
+        setPdfProgress(`正在產生 PDF 頁面 (${i + 1}/${exportItems.length})...`);
+        const itemElement = container.children[i] as HTMLElement;
+        if (!itemElement) continue;
+
+        // Render element to high-res canvas
+        const canvas = await html2canvas(itemElement, {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#FFFFFF'
+        });
+
+        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+        const pageWidth = 297;
+        const pageHeight = 210;
+        const margin = 10;
+        const maxContentWidth = pageWidth - margin * 2;
+        const maxContentHeight = pageHeight - margin * 2;
+
+        const imgWidth = maxContentWidth;
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+        let finalWidth = imgWidth;
+        let finalHeight = imgHeight;
+        if (finalHeight > maxContentHeight) {
+          finalHeight = maxContentHeight;
+          finalWidth = (canvas.width * finalHeight) / canvas.height;
+        }
+
+        const posX = margin + (maxContentWidth - finalWidth) / 2;
+        const posY = margin + (maxContentHeight - finalHeight) / 2;
+
+        if (i > 0) {
+          pdf.addPage('a4', 'landscape');
+        }
+
+        pdf.addImage(imgData, 'JPEG', posX, posY, finalWidth, finalHeight);
       }
-      else if (exportType === 'teacher') {
-        const teacher = teachers.find(t => t.id === id)!;
-        const teacherCourses = courses.filter(c => c.teacherIds.includes(teacher.id));
-        gridData = generateGridData(teacherCourses, teacher.name, '教師');
-      }
-      else if (exportType === 'classroom') {
-        const classroom = classrooms.find(c => c.id === id)!;
-        const classroomCourses = courses.filter(c => c.classroomId === classroom.id);
-        gridData = generateGridData(classroomCourses, classroom.name, '教室');
-      }
+
+      const fileName = exportItems.length === 1 
+        ? `${exportItems[0].filename}_課表.pdf` 
+        : `課表匯出_${exportType}_${new Date().getTime()}.pdf`;
+      pdf.save(fileName);
+    } catch (err) {
+      console.error('PDF export failed:', err);
+      alert('PDF 匯出失敗，請重試或改用 Excel 匯出。');
+    } finally {
+      setIsExportingPDF(false);
+      setPdfProgress('');
     }
+  };
 
-    if (!gridData) return <div className="p-12 text-center text-[#8A8475]">請先選擇要匯出的項目以檢視預覽</div>;
-
+  const renderTimetableTable = (gridData: { titleRow?: string; headers: string[]; rows: string[][]; footer?: string }) => {
     const theme = THEMES[selectedTheme];
-
     return (
       <div className="bg-white p-6 rounded-lg overflow-x-auto border border-[#E5E1D5]">
         {gridData.titleRow && <h2 className="text-2xl font-bold text-center mb-6 text-[#2D2D2A]">{gridData.titleRow}</h2>}
@@ -290,10 +365,21 @@ export default function ExportView({ students, teachers, classrooms, courses, en
     );
   };
 
+  const renderPreview = () => {
+    const items = getAllExportGridData();
+    if (items.length === 0) {
+      return <div className="p-12 text-center text-[#8A8475]">請先選擇要匯出的項目以檢視預覽</div>;
+    }
+    return renderTimetableTable(items[0].gridData);
+  };
+
   let listData: {id: string, name: string}[] = [];
   if (exportType === 'student') listData = students;
   else if (exportType === 'teacher') listData = teachers;
   else if (exportType === 'classroom') listData = classrooms;
+
+  const isActionDisabled = exportType !== 'grade' && selectedIds.length === 0;
+  const allExportItems = getAllExportGridData();
 
   return (
     <div className="flex h-full bg-white rounded-2xl shadow-sm border border-[#E5E1D5] overflow-hidden relative">
@@ -400,23 +486,78 @@ export default function ExportView({ students, teachers, classrooms, courses, en
         </div>
       </div>
 
-      {/* Floating Buttons */}
-      <div className="absolute bottom-6 right-6 flex flex-col gap-3">
+      {/* Floating Action Buttons */}
+      {isDownloadMenuOpen && (
+        <div 
+          className="fixed inset-0 z-40" 
+          onClick={() => setIsDownloadMenuOpen(false)}
+        />
+      )}
+
+      <div className="absolute bottom-6 right-6 flex flex-col items-end gap-3 z-40">
+        {/* Floating Sub-Buttons (Excel / PDF) */}
+        {isDownloadMenuOpen && (
+          <div className="flex flex-col items-end gap-3 mb-1 animate-in fade-in slide-in-from-bottom-3 duration-200">
+            {/* PDF Option */}
+            <div className="flex items-center gap-2.5">
+              <span className="px-2.5 py-1 bg-[#2D2D2A] text-white text-xs font-medium rounded-lg shadow-md">
+                下載 PDF (.pdf)
+              </span>
+              <button 
+                onClick={handleExportPDF}
+                disabled={isActionDisabled || isExportingPDF}
+                className="w-12 h-12 rounded-full bg-[#E11D48] text-white hover:bg-[#BE123C] flex items-center justify-center shadow-lg transition-transform hover:scale-105 active:scale-95"
+                title="下載 PDF"
+              >
+                <FileText size={20} />
+              </button>
+            </div>
+
+            {/* Excel Option */}
+            <div className="flex items-center gap-2.5">
+              <span className="px-2.5 py-1 bg-[#2D2D2A] text-white text-xs font-medium rounded-lg shadow-md">
+                下載 Excel (.xlsx)
+              </span>
+              <button 
+                onClick={handleExportExcel}
+                disabled={isActionDisabled || isExportingPDF}
+                className="w-12 h-12 rounded-full bg-[#16A34A] text-white hover:bg-[#15803D] flex items-center justify-center shadow-lg transition-transform hover:scale-105 active:scale-95"
+                title="下載 Excel"
+              >
+                <FileSpreadsheet size={20} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Preview Button */}
         <button 
           onClick={() => setIsPreviewOpen(true)}
-          disabled={exportType !== 'grade' && selectedIds.length === 0}
-          className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-transform hover:scale-105 ${exportType !== 'grade' && selectedIds.length === 0 ? 'bg-[#E5E1D5] text-[#8A8475] cursor-not-allowed' : 'bg-white text-[#5A5A40] hover:bg-[#F9F8F4] border border-[#D9D4C7]'}`}
+          disabled={isActionDisabled || isExportingPDF}
+          className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-transform hover:scale-105 active:scale-95 ${isActionDisabled ? 'bg-[#E5E1D5] text-[#8A8475] cursor-not-allowed' : 'bg-white text-[#5A5A40] hover:bg-[#F9F8F4] border border-[#D9D4C7]'}`}
           title="預覽課表"
         >
           <Eye size={24} />
         </button>
+
+        {/* Main Download Toggle Button */}
         <button 
-          onClick={handleExport}
-          disabled={exportType !== 'grade' && selectedIds.length === 0}
-          className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-transform hover:scale-105 ${exportType !== 'grade' && selectedIds.length === 0 ? 'bg-[#E5E1D5] text-[#8A8475] cursor-not-allowed' : 'bg-[#5A5A40] text-white hover:bg-[#4A4A3A]'}`}
-          title="下載 Excel"
+          onClick={() => {
+            if (!isActionDisabled && !isExportingPDF) {
+              setIsDownloadMenuOpen(!isDownloadMenuOpen);
+            }
+          }}
+          disabled={isActionDisabled || isExportingPDF}
+          className={`w-14 h-14 rounded-full flex items-center justify-center shadow-xl transition-all duration-200 hover:scale-105 active:scale-95 ${isActionDisabled ? 'bg-[#E5E1D5] text-[#8A8475] cursor-not-allowed' : isDownloadMenuOpen ? 'bg-[#4A4A3A] text-white rotate-90' : 'bg-[#5A5A40] text-white hover:bg-[#4A4A3A]'}`}
+          title={isDownloadMenuOpen ? '關閉選單' : '下載課表'}
         >
-          <Download size={24} />
+          {isExportingPDF ? (
+            <Loader2 size={24} className="animate-spin" />
+          ) : isDownloadMenuOpen ? (
+            <X size={24} />
+          ) : (
+            <Download size={24} />
+          )}
         </button>
       </div>
 
@@ -440,19 +581,103 @@ export default function ExportView({ students, teachers, classrooms, courses, en
             <div className="flex-1 overflow-auto p-6 bg-[#FDFBF7]">
               {renderPreview()}
             </div>
-            <div className="p-4 bg-white border-t border-[#E5E1D5] flex justify-end gap-3">
-              <button onClick={() => setIsPreviewOpen(false)} className="px-6 py-2 text-sm font-bold text-[#5A5A40] hover:bg-[#F9F8F4] rounded-lg transition-colors border border-[#D9D4C7]">
+            <div className="p-4 bg-white border-t border-[#E5E1D5] flex justify-between items-center">
+              <button onClick={() => setIsPreviewOpen(false)} className="px-5 py-2 text-sm font-bold text-[#5A5A40] hover:bg-[#F9F8F4] rounded-lg transition-colors border border-[#D9D4C7]">
                 關閉預覽
               </button>
-              <button onClick={handleExport} className="px-6 py-2 text-sm font-bold bg-[#5A5A40] text-white rounded-lg hover:bg-[#4A4A3A] transition-colors flex items-center gap-2 shadow-sm">
-                <Download size={16} /> 確認下載
-              </button>
+              <div className="flex gap-3">
+                <button 
+                  onClick={async () => {
+                    await handleExportPDF();
+                  }} 
+                  disabled={isExportingPDF}
+                  className="px-5 py-2 text-sm font-bold bg-[#E11D48] text-white rounded-lg hover:bg-[#BE123C] transition-colors flex items-center gap-2 shadow-sm"
+                >
+                  <FileText size={16} /> 下載 PDF
+                </button>
+                <button 
+                  onClick={handleExportExcel} 
+                  className="px-5 py-2 text-sm font-bold bg-[#16A34A] text-white rounded-lg hover:bg-[#15803D] transition-colors flex items-center gap-2 shadow-sm"
+                >
+                  <FileSpreadsheet size={16} /> 下載 Excel
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* PDF Export Progress Overlay */}
+      {isExportingPDF && (
+        <div className="fixed inset-0 bg-[#2D2D2A]/60 backdrop-blur-sm z-50 flex items-center justify-center p-8">
+          <div className="bg-white px-8 py-6 rounded-2xl shadow-2xl border border-[#E5E1D5] flex flex-col items-center gap-4">
+            <Loader2 size={36} className="text-[#E11D48] animate-spin" />
+            <div className="text-center">
+              <h3 className="font-bold text-[#2D2D2A] text-base mb-1">正在匯出 PDF 課表</h3>
+              <p className="text-xs text-[#8A8475]">{pdfProgress}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Off-screen Render Container for high-quality PDF html2canvas capture */}
+      <div 
+        ref={pdfContainerRef} 
+        className="fixed left-[-9999px] top-0 pointer-events-none"
+        style={{ width: '1080px' }}
+      >
+        {allExportItems.map((item, idx) => (
+          <div key={idx} className="bg-white p-8 mb-8" style={{ width: '1080px' }}>
+            {item.gridData.titleRow && (
+              <h2 className="text-2xl font-bold text-center mb-6 text-[#2D2D2A]">
+                {item.gridData.titleRow}
+              </h2>
+            )}
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr>
+                  {item.gridData.headers.map((h, hIdx) => (
+                    <th 
+                      key={hIdx} 
+                      className="py-3 px-3 border text-center font-bold text-base"
+                      style={{ 
+                        backgroundColor: THEMES[selectedTheme].cssBg, 
+                        color: THEMES[selectedTheme].cssText, 
+                        borderColor: THEMES[selectedTheme].cssBorder 
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {item.gridData.rows.map((row, rIdx) => (
+                  <tr key={rIdx} className="bg-white">
+                    {row.map((cell, cIdx) => (
+                      <td 
+                        key={cIdx} 
+                        className="py-3 px-3 border text-center whitespace-pre-wrap leading-relaxed text-sm text-[#2D2D2A]"
+                        style={{ borderColor: THEMES[selectedTheme].cssBorder }}
+                      >
+                        {cell}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {item.gridData.footer && (
+              <div className="mt-4 font-bold text-sm text-[#4A4A3A]">
+                {item.gridData.footer}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
+
 
 
