@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Student, Course, Enrollment, TimeSlot } from '../types';
+import { Student, Course, Enrollment, TimeSlot, Teacher } from '../types';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
 
 interface EnrollmentProps {
@@ -8,9 +8,10 @@ interface EnrollmentProps {
   enrollments: Enrollment[];
   setEnrollments: React.Dispatch<React.SetStateAction<Enrollment[]>>;
   timeSlots: TimeSlot[];
+  teachers: Teacher[];
 }
 
-export default function EnrollmentView({ students, courses, enrollments, setEnrollments, timeSlots }: EnrollmentProps) {
+export default function EnrollmentView({ students, courses, enrollments, setEnrollments, timeSlots, teachers }: EnrollmentProps) {
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
 
   const safeStudents = students || [];
@@ -105,8 +106,7 @@ export default function EnrollmentView({ students, courses, enrollments, setEnro
           {selectedStudent && (
             <div className="flex-1 flex flex-col min-h-0 bg-[#F9F8F4] rounded-xl border border-[#E5E1D5] p-4">
               <h3 className="font-bold text-[#4A4A3A] mb-3 flex justify-between items-center text-sm">
-                <span>可選課程清單</span>
-                <span className="text-[10px] font-bold text-[#8A8475] bg-white px-2 py-1 rounded shadow-sm border border-[#E5E1D5] tracking-widest uppercase">僅顯示 {selectedStudent.grade} 年級</span>
+                <span>可選課程清單</span>                
               </h3>
               <div className="flex-1 overflow-y-auto space-y-2 pr-2">
                 {availableCourses.map(course => {
@@ -116,7 +116,7 @@ export default function EnrollmentView({ students, courses, enrollments, setEnro
                       <input type="checkbox" checked={isSelected} onChange={() => toggleCourse(course.id)} className="mt-1 rounded text-[#5A5A40] focus:ring-[#5A5A40] border-[#D9D4C7]" />
                       <div>
                         <div className={`font-medium ${isSelected ? 'text-[#4A4A3A]' : 'text-[#2D2D2A]'}`}>{course.name}</div>
-                        <div className="text-xs text-[#8A8475] mt-1 font-mono">時段: {course.timeSlotIds.length} | 教師: {course.teacherIds.length}</div>
+                        <div className="text-xs text-[#8A8475] mt-1 font-mono"> {course.timeSlotIds.length} 節| {course.teacherIds.map(tid => teachers.find(t => t.id === tid)?.name).filter(Boolean).join(', ') || '無'}</div>
                       </div>
                     </label>
                   );

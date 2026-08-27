@@ -60,6 +60,7 @@ function TimeSlotManager({ data, setData, setConfirmDialog }: { data: TimeSlot[]
       dataType="timeSlots"
       emptyItem={() => ({ id: `TS${Date.now()}`, name: '', startTime: '08:00', endTime: '09:00' })}
       customColumns={['時間範圍']}
+      allowReorder={true}
       renderCustomFields={(item, updateItem) => {
         const handleStartTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
           const newStart = e.target.value;

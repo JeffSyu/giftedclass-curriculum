@@ -147,9 +147,6 @@ export default function CourseAssignment({ students, courses, enrollments, setEn
             <div className="flex-1 flex flex-col min-h-0 bg-white border border-[#E5E1D5] rounded-xl overflow-hidden">
               <div className="p-4 bg-[#F9F8F4] border-b border-[#E5E1D5] flex justify-between items-center">
                 <h3 className="font-bold text-[#4A4A3A] text-sm">可選學生清單</h3>
-                <span className="text-xs font-bold text-[#8A8475] bg-white px-2 py-1 rounded shadow-sm border border-[#E5E1D5] tracking-widest uppercase">
-                  符合條件: {availableStudents.length} 人
-                </span>
               </div>
               <div className="flex-1 overflow-y-auto p-4 space-y-2">
                 {availableStudents.map(student => {

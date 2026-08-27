@@ -1,10 +1,11 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Upload, Download, Plus, Trash2 } from 'lucide-react';
+import { Upload, Download, Plus, Trash2, GripVertical } from 'lucide-react';
+import { Reorder, useDragControls } from 'motion/react';
 import { downloadCSV, parseCSV } from '../utils/csv';
 
 export function GenericManager<T extends { id: string, name: string }>({ 
-  data, setData, title, dataType, emptyItem, customColumns, renderCustomFields, setConfirmDialog, simplifiedLayout, processUpload, prepareDownload
+  data, setData, title, dataType, emptyItem, customColumns, renderCustomFields, setConfirmDialog, simplifiedLayout, processUpload, prepareDownload, allowReorder
 }: { 
   data: T[], 
   setData: (d: T[]) => void, 
@@ -16,7 +17,8 @@ export function GenericManager<T extends { id: string, name: string }>({
   setConfirmDialog: (dialog: { message: string, onConfirm: () => void } | null) => void,
   simplifiedLayout?: boolean,
   processUpload?: (data: any[]) => T[],
-  prepareDownload?: (data: T[]) => any[]
+  prepareDownload?: (data: T[]) => any[],
+  allowReorder?: boolean
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [headerTarget, setHeaderTarget] = useState<HTMLElement | null>(null);
@@ -121,7 +123,7 @@ export function GenericManager<T extends { id: string, name: string }>({
         <table className="w-full text-left text-sm relative">
           <thead className="bg-[#F9F8F4] border-b border-[#E5E1D5] sticky top-0 z-10 shadow-sm">
             <tr className="text-[11px] text-[#8A8475] uppercase tracking-wider">
-              <th className="px-4 py-4 w-10 text-center">
+              <th className={`px-4 py-4 ${allowReorder ? 'w-16' : 'w-10'} text-center`}>
                 <input type="checkbox" checked={selectedIds.size === data.length && data.length > 0} onChange={toggleSelectAll} className="rounded text-[#5A5A40] focus:ring-[#5A5A40] border-[#D9D4C7]" />
               </th>
               <th className="px-6 py-4 font-bold">代碼</th>
@@ -130,34 +132,89 @@ export function GenericManager<T extends { id: string, name: string }>({
               <th className="px-6 py-4 font-bold text-right">操作</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#F2EFE9]">
-            {data.map(item => (
-              <tr key={item.id} className={`transition-colors group ${selectedIds.has(item.id) ? 'bg-[#FDFBF7]' : 'hover:bg-[#FDFBF7]'}`}>
-                <td className="px-4 py-3 text-center">
-                  <input type="checkbox" checked={selectedIds.has(item.id)} onChange={() => toggleSelect(item.id)} className="rounded text-[#5A5A40] focus:ring-[#5A5A40] border-[#D9D4C7]" />
-                </td>
-                <td className="px-6 py-3 font-mono text-[#8A8475]">
-                  <input type="text" value={item.id} onChange={e => updateItem(item.id, 'id', e.target.value)} className="w-full bg-transparent border-b border-transparent focus:border-[#5A5A40] focus:outline-none focus:ring-0 px-1 py-1" placeholder="輸入 ID" />
-                </td>
-                <td className="px-6 py-3 text-[#2D2D2A]">
-                  <input type="text" value={item.name} onChange={e => updateItem(item.id, 'name', e.target.value)} className="w-full bg-transparent border-b border-transparent focus:border-[#5A5A40] focus:outline-none focus:ring-0 px-1 py-1" placeholder="輸入名稱" />
-                </td>
-                {renderCustomFields && renderCustomFields(item, updateItem)}
-                <td className="px-6 py-3 text-right">
-                  <button onClick={() => removeSingle(item.id)} className="text-[#8A8475] hover:text-[#E06C6C] p-1.5 rounded-md hover:bg-[#F2EFE9] transition-colors opacity-0 group-hover:opacity-100">
-                    <Trash2 size={16} />
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {data.length === 0 && (
-              <tr>
-                <td colSpan={4 + (customColumns?.length || 0)} className="px-6 py-12 text-center text-[#8A8475] text-sm bg-white">目前沒有資料，請點擊上方按鈕新增</td>
-              </tr>
-            )}
-          </tbody>
+          {allowReorder && data.length > 0 ? (
+            <Reorder.Group as="tbody" values={data} onReorder={setData} className="divide-y divide-[#F2EFE9]">
+              {data.map(item => (
+                <DraggableRow
+                  key={item.id}
+                  item={item}
+                  selectedIds={selectedIds}
+                  toggleSelect={toggleSelect}
+                  updateItem={updateItem}
+                  removeSingle={removeSingle}
+                  renderCustomFields={renderCustomFields}
+                />
+              ))}
+            </Reorder.Group>
+          ) : (
+            <tbody className="divide-y divide-[#F2EFE9]">
+              {data.map(item => (
+                <tr key={item.id} className={`transition-colors group ${selectedIds.has(item.id) ? 'bg-[#FDFBF7]' : 'hover:bg-[#FDFBF7]'}`}>
+                  <td className="px-4 py-3 text-center">
+                    <input type="checkbox" checked={selectedIds.has(item.id)} onChange={() => toggleSelect(item.id)} className="rounded text-[#5A5A40] focus:ring-[#5A5A40] border-[#D9D4C7]" />
+                  </td>
+                  <td className="px-6 py-3 font-mono text-[#8A8475]">
+                    <input type="text" value={item.id} onChange={e => updateItem(item.id, 'id', e.target.value)} className="w-full bg-transparent border-b border-transparent focus:border-[#5A5A40] focus:outline-none focus:ring-0 px-1 py-1" placeholder="輸入 ID" />
+                  </td>
+                  <td className="px-6 py-3 text-[#2D2D2A]">
+                    <input type="text" value={item.name} onChange={e => updateItem(item.id, 'name', e.target.value)} className="w-full bg-transparent border-b border-transparent focus:border-[#5A5A40] focus:outline-none focus:ring-0 px-1 py-1" placeholder="輸入名稱" />
+                  </td>
+                  {renderCustomFields && renderCustomFields(item, updateItem)}
+                  <td className="px-6 py-3 text-right">
+                    <button onClick={() => removeSingle(item.id)} className="text-[#8A8475] hover:text-[#E06C6C] p-1.5 rounded-md hover:bg-[#F2EFE9] transition-colors opacity-0 group-hover:opacity-100">
+                      <Trash2 size={16} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {data.length === 0 && (
+                <tr>
+                  <td colSpan={4 + (customColumns?.length || 0)} className="px-6 py-12 text-center text-[#8A8475] text-sm bg-white">目前沒有資料，請點擊上方按鈕新增</td>
+                </tr>
+              )}
+            </tbody>
+          )}
         </table>
       </div>
     </div>
+  );
+}
+
+function DraggableRow({ item, selectedIds, toggleSelect, updateItem, removeSingle, renderCustomFields }: any) {
+  const controls = useDragControls();
+
+  return (
+    <Reorder.Item 
+      as="tr" 
+      value={item} 
+      dragListener={false} 
+      dragControls={controls}
+      className={`transition-colors group ${selectedIds.has(item.id) ? 'bg-[#FDFBF7]' : 'bg-white hover:bg-[#FDFBF7]'}`}
+    >
+      <td className="px-4 py-3 text-center">
+        <div className="flex items-center justify-center gap-2">
+          <div 
+            className="cursor-grab active:cursor-grabbing text-[#D9D4C7] hover:text-[#8A8475] transition-colors" 
+            title="拖曳排序"
+            onPointerDown={(e) => controls.start(e)}
+          >
+            <GripVertical size={16} />
+          </div>
+          <input type="checkbox" checked={selectedIds.has(item.id)} onChange={() => toggleSelect(item.id)} className="rounded text-[#5A5A40] focus:ring-[#5A5A40] border-[#D9D4C7]" />
+        </div>
+      </td>
+      <td className="px-6 py-3 font-mono text-[#8A8475]">
+        <input type="text" value={item.id} onChange={e => updateItem(item.id, 'id', e.target.value)} className="w-full bg-transparent border-b border-transparent focus:border-[#5A5A40] focus:outline-none focus:ring-0 px-1 py-1" placeholder="輸入 ID" />
+      </td>
+      <td className="px-6 py-3 text-[#2D2D2A]">
+        <input type="text" value={item.name} onChange={e => updateItem(item.id, 'name', e.target.value)} className="w-full bg-transparent border-b border-transparent focus:border-[#5A5A40] focus:outline-none focus:ring-0 px-1 py-1" placeholder="輸入名稱" />
+      </td>
+      {renderCustomFields && renderCustomFields(item, updateItem)}
+      <td className="px-6 py-3 text-right">
+        <button onClick={() => removeSingle(item.id)} className="text-[#8A8475] hover:text-[#E06C6C] p-1.5 rounded-md hover:bg-[#F2EFE9] transition-colors opacity-0 group-hover:opacity-100">
+          <Trash2 size={16} />
+        </button>
+      </td>
+    </Reorder.Item>
   );
 }

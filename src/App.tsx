@@ -130,7 +130,7 @@ export default function App() {
               <EnrollmentView 
                 students={store.students} courses={store.courses} 
                 enrollments={store.enrollments} setEnrollments={store.setEnrollments}
-                timeSlots={store.timeSlots}
+                timeSlots={store.timeSlots} teachers={store.teachers}
               />
             )}
             {activeTab === 'assignment' && (
