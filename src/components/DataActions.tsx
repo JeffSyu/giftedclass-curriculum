@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Download, Upload, Trash2 } from 'lucide-react';
+import { FolderDown, FileUp, Trash2 } from 'lucide-react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { toCSVString, parseCSVString } from '../utils/csv';
@@ -160,20 +160,20 @@ export default function DataActions({ store }: DataActionsProps) {
           onClick={handleExport}
           className="flex items-center gap-1.5 px-3 py-1.5 border border-[#5A5A40] text-[#5A5A40] rounded-md text-sm font-medium hover:bg-[#5A5A40]/5 transition-colors shadow-sm"
         >
-          <Download size={12} /> 備份
+          <FolderDown size={13} /> 備份
         </button>
         <input type="file" accept=".zip" className="hidden" ref={fileInputRef} onChange={handleImport} />
         <button 
           onClick={() => !loading && fileInputRef.current?.click()}
           className={`flex items-center gap-1.5 px-3 py-1.5 bg-[#5A5A40] text-white rounded-md text-sm font-medium shadow-sm transition-colors ${loading ? 'opacity-70 cursor-not-allowed' : 'hover:bg-[#4A4A3A]'}`}
         >
-          <Upload size={12} /> {loading ? '處理中' : '匯入備份'}
+          <FileUp size={13} /> {loading ? '處理中' : '匯入備份'}
         </button>
         <button 
           onClick={clearCache}
           className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FAF5F5] text-[#A34A4A] border border-[#E8D0D0] rounded-md text-sm font-medium shadow-sm hover:bg-[#F5EAEA] transition-colors ml-2"
         >
-          <Trash2 size={12} /> 清理暫存
+          <Trash2 size={13} /> 清理暫存
         </button>
       </div>
 

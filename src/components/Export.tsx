@@ -2,10 +2,11 @@ import React, { useState, useRef } from 'react';
 import { Student, Teacher, Classroom, Course, Enrollment, TimeSlot } from '../types';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
-import { Download, Eye, X, FileSpreadsheet, FileText, Loader2 } from 'lucide-react';
+import { ArrowDownToLine, FileSearch, X, FileSpreadsheet, FileText, Loader2 } from 'lucide-react';
 import { useAppStore } from '../store';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface ExportProps {
   students: Student[];
@@ -27,20 +28,20 @@ type ThemeKey = keyof typeof THEMES;
 export default function ExportView({ students, teachers, classrooms, courses, enrollments, timeSlots }: ExportProps) {
   const [exportType, setExportType] = useState<'student' | 'teacher' | 'classroom' | 'grade'>('student');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [selectedGrade, setSelectedGrade] = useState<number>(7);
+  
+  // Student Filters
+  const [filterStudentGrade, setFilterStudentGrade] = useState<number | ''>('');
+  const [filterStudentCategory, setFilterStudentCategory] = useState<string>('');
 
   // Settings
   const [showTitle, setShowTitle] = useState(false);
   const [titleText, setTitleText] = useState('課表');
   const [showEntityName, setShowEntityName] = useState(true);
   const [selectedTheme, setSelectedTheme] = useState<ThemeKey>('default');
-  const [infoOptions, setInfoOptions] = useState({
-    courseName: true,
-    grade: false,
-    category: false,
-    teacher: false,
-    classroom: false
-  });
+  
+  // Course Info Template
+  const [courseInfoTemplate, setCourseInfoTemplate] = useState<string>("[課程名稱]\n[教師]\n[教室]");
+  const templateTags = ['[課程名稱]', '[年級]', '[類別]', '[教師]', '[教室]'];
 
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState(false);
@@ -63,22 +64,29 @@ export default function ExportView({ students, teachers, classrooms, courses, en
   const dayNames = ['星期一', '星期二', '星期三', '星期四', '星期五'];
 
   const formatCourseInfo = (c: Course) => {
-    const parts = [];
-    if (infoOptions.courseName) parts.push(c.name);
-    if (infoOptions.grade) parts.push(`${(c.targetGrades || []).join(',')}年級`);
-    if (infoOptions.category && c.targetCategoryIds && c.targetCategoryIds.length > 0) {
-      const catNames = c.targetCategoryIds.map(cid => categories.find(cat => cat.id === cid)?.name).filter(Boolean);
-      if (catNames.length > 0) parts.push(`(${catNames.join(',')})`);
+    let text = courseInfoTemplate;
+    text = text.replace(/\[課程名稱\]/g, c.name || '');
+    text = text.replace(/\[年級\]/g, (c.targetGrades || []).join(','));
+    
+    let catText = '';
+    if (c.targetCategoryIds && c.targetCategoryIds.length > 0) {
+      catText = c.targetCategoryIds.map(cid => categories.find(cat => cat.id === cid)?.name).filter(Boolean).join(',');
     }
-    if (infoOptions.teacher && c.teacherIds && c.teacherIds.length > 0) {
-      const tNames = c.teacherIds.map(tid => teachers.find(t => t.id === tid)?.name).filter(Boolean);
-      if (tNames.length > 0) parts.push(`${tNames.join(',')}`);
+    text = text.replace(/\[類別\]/g, catText);
+    
+    let teacherText = '';
+    if (c.teacherIds && c.teacherIds.length > 0) {
+      teacherText = c.teacherIds.map(tid => teachers.find(t => t.id === tid)?.name).filter(Boolean).join(',');
     }
-    if (infoOptions.classroom && c.classroomId) {
-      const room = classrooms.find(r => r.id === c.classroomId)?.name;
-      if (room) parts.push(`${room}`);
+    text = text.replace(/\[教師\]/g, teacherText);
+    
+    let roomText = '';
+    if (c.classroomId) {
+      roomText = classrooms.find(r => r.id === c.classroomId)?.name || '';
     }
-    return parts.join('\n');
+    text = text.replace(/\[教室\]/g, roomText);
+    
+    return text.split('\n').filter(line => line.trim() !== '').join('\n');
   };
 
   const generateGridData = (coursesForEntity: Course[], entityName: string, entityTypeLabel: string) => {
@@ -158,12 +166,15 @@ export default function ExportView({ students, teachers, classrooms, courses, en
         });
       });
     } else if (exportType === 'grade') {
-      const gradeCourses = courses.filter(c => (c.targetGrades || []).includes(selectedGrade as any));
-      const gridData = generateGridData(gradeCourses, `${selectedGrade}年級總表`, '年級');
-      result.push({
-        title: `${selectedGrade}年級總表`,
-        filename: `${selectedGrade}年級總表`,
-        gridData
+      selectedIds.forEach(gradeStr => {
+        const gradeNum = Number(gradeStr);
+        const gradeCourses = courses.filter(c => (c.targetGrades || []).includes(gradeNum as any));
+        const gridData = generateGridData(gradeCourses, `${gradeNum}年級總表`, '年級');
+        result.push({
+          title: `${gradeNum}年級總表`,
+          filename: `${gradeNum}年級總表`,
+          gridData
+        });
       });
     }
     return result;
@@ -374,11 +385,27 @@ export default function ExportView({ students, teachers, classrooms, courses, en
   };
 
   let listData: {id: string, name: string}[] = [];
-  if (exportType === 'student') listData = students;
+  if (exportType === 'student') {
+    let filtered = students;
+    if (filterStudentGrade !== '') {
+      filtered = filtered.filter(s => s.grade === filterStudentGrade);
+    }
+    if (filterStudentCategory !== '') {
+      filtered = filtered.filter(s => (s.categoryIds || []).includes(filterStudentCategory));
+    }
+    listData = filtered;
+  }
   else if (exportType === 'teacher') listData = teachers;
   else if (exportType === 'classroom') listData = classrooms;
+  else if (exportType === 'grade') {
+    listData = [
+      { id: '7', name: '七年級' },
+      { id: '8', name: '八年級' },
+      { id: '9', name: '九年級' }
+    ];
+  }
 
-  const isActionDisabled = exportType !== 'grade' && selectedIds.length === 0;
+  const isActionDisabled = selectedIds.length === 0;
   const allExportItems = getAllExportGridData();
 
   return (
@@ -392,38 +419,52 @@ export default function ExportView({ students, teachers, classrooms, courses, en
           <button className={`pb-3 font-medium text-sm focus:outline-none transition-colors ${exportType === 'grade' ? 'border-b-2 border-[#5A5A40] text-[#4A4A3A] font-bold' : 'text-[#8A8475] border-b-2 border-transparent hover:text-[#5A5A40]'}`} onClick={() => setExportType('grade')}>年級總表</button>
         </div>
         
-        <div className="flex-1 overflow-y-auto p-4 bg-white">
-          {exportType === 'grade' ? (
-             <div className="p-4 bg-[#F9F8F4] rounded-xl border border-[#D9D4C7]">
-                <label className="block text-sm font-bold text-[#8A8475] uppercase tracking-wider mb-2">選擇年級</label>
-                <select value={selectedGrade} onChange={e => setSelectedGrade(Number(e.target.value))} className="w-full px-4 py-2 bg-white border border-[#D9D4C7] rounded-lg focus:ring-1 focus:ring-[#5A5A40] focus:border-[#5A5A40] outline-none text-[#2D2D2A]">
-                  <option value={7}>七年級</option>
-                  <option value={8}>八年級</option>
-                  <option value={9}>九年級</option>
-                </select>
-             </div>
-          ) : (
-            <>
-              <div className="flex justify-between items-center mb-4">
-                <span className="text-sm font-medium text-[#4A4A3A]">清單 ({listData.length} 筆)</span>
-                <div className="flex gap-3 text-sm">
-                  <button onClick={() => selectAll(listData.map(d => d.id))} className="text-[#5A5A40] hover:text-[#4A4A3A] font-medium">全選</button>
-                  <button onClick={clearSelection} className="text-[#8A8475] hover:text-[#5A5A40] font-medium">清除</button>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                {listData.map(item => (
-                  <label key={item.id} className={`flex items-center gap-2 p-3 rounded-lg cursor-pointer transition-colors border ${selectedIds.includes(item.id) ? 'bg-[#F9F8F4] border-[#5A5A40] shadow-sm text-[#4A4A3A] font-medium' : 'hover:bg-[#F9F8F4] border-[#E5E1D5] text-[#2D2D2A]'}`}>
-                    <input type="checkbox" checked={selectedIds.includes(item.id)} onChange={() => toggleSelection(item.id)} className="rounded text-[#5A5A40] focus:ring-[#5A5A40] border-[#D9D4C7]" />
-                    <span className="text-sm truncate">{item.name || item.id}</span>
-                  </label>
+        <div className="flex-1 flex flex-col overflow-y-hidden bg-white">
+          {exportType === 'student' && (
+            <div className="p-4 border-b border-[#E5E1D5] bg-[#FDFBF7] flex gap-3">
+              <select 
+                value={filterStudentGrade} 
+                onChange={e => setFilterStudentGrade(e.target.value ? Number(e.target.value) : '')}
+                className="flex-1 px-3 py-2 text-sm bg-white border border-[#D9D4C7] rounded-lg focus:ring-1 focus:ring-[#5A5A40] outline-none"
+              >
+                <option value="">所有年級</option>
+                <option value={7}>七年級</option>
+                <option value={8}>八年級</option>
+                <option value={9}>九年級</option>
+              </select>
+              <select 
+                value={filterStudentCategory} 
+                onChange={e => setFilterStudentCategory(e.target.value)}
+                className="flex-1 px-3 py-2 text-sm bg-white border border-[#D9D4C7] rounded-lg focus:ring-1 focus:ring-[#5A5A40] outline-none"
+              >
+                <option value="">所有類別</option>
+                {categories.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
-                {listData.length === 0 && (
-                  <div className="col-span-full py-8 text-center text-[#8A8475] text-sm">無資料</div>
-                )}
-              </div>
-            </>
+              </select>
+            </div>
           )}
+          
+          <div className="flex-1 overflow-y-auto p-4">
+            <div className="flex justify-between items-center mb-4">
+              <span className="text-sm font-medium text-[#4A4A3A]">清單 ({listData.length} 筆)</span>
+              <div className="flex gap-3 text-sm">
+                <button onClick={() => selectAll(listData.map(d => d.id))} className="text-[#5A5A40] hover:text-[#4A4A3A] font-medium">全選</button>
+                <button onClick={clearSelection} className="text-[#8A8475] hover:text-[#5A5A40] font-medium">清除</button>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {listData.map(item => (
+                <label key={item.id} className={`flex items-center gap-2 p-3 rounded-lg cursor-pointer transition-colors border ${selectedIds.includes(item.id) ? 'bg-[#F9F8F4] border-[#5A5A40] shadow-sm text-[#4A4A3A] font-medium' : 'hover:bg-[#F9F8F4] border-[#E5E1D5] text-[#2D2D2A]'}`}>
+                  <input type="checkbox" checked={selectedIds.includes(item.id)} onChange={() => toggleSelection(item.id)} className="rounded text-[#5A5A40] focus:ring-[#5A5A40] border-[#D9D4C7]" />
+                  <span className="text-sm truncate">{item.name || item.id}</span>
+                </label>
+              ))}
+              {listData.length === 0 && (
+                <div className="col-span-full py-8 text-center text-[#8A8475] text-sm">無資料</div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -452,20 +493,28 @@ export default function ExportView({ students, teachers, classrooms, courses, en
           </div>
 
           <div className="space-y-3">
-            <h4 className="text-sm font-bold text-[#8A8475] uppercase tracking-wider">課程資訊</h4>
-            <div className="grid grid-cols-2 gap-3">
-              {Object.entries({
-                courseName: '課程名稱',
-                grade: '年級',
-                category: '學生類別',
-                teacher: '教師',
-                classroom: '教室'
-              }).map(([key, label]) => (
-                <label key={key} className="flex items-center gap-3 p-3 bg-white border border-[#D9D4C7] rounded-lg cursor-pointer">
-                  <input type="checkbox" checked={(infoOptions as any)[key]} onChange={e => setInfoOptions({...infoOptions, [key]: e.target.checked})} className="rounded text-[#5A5A40] focus:ring-[#5A5A40] border-[#D9D4C7]" />
-                  <span className="text-sm font-medium text-[#2D2D2A]">{label}</span>
-                </label>
-              ))}
+            <div className="flex justify-between items-end">
+              <h4 className="text-sm font-bold text-[#8A8475] uppercase tracking-wider">課程資訊</h4>
+              <span className="text-xs text-[#8A8475]">可點擊標籤插入或自由編輯</span>
+            </div>
+            <div className="bg-white border border-[#D9D4C7] rounded-lg overflow-hidden flex flex-col">
+              <div className="p-2 border-b border-[#E5E1D5] bg-[#F9F8F4] flex flex-wrap gap-1.5">
+                {templateTags.map(tag => (
+                  <button 
+                    key={tag}
+                    onClick={() => setCourseInfoTemplate(prev => prev + tag)}
+                    className="px-2 py-1 text-xs font-medium bg-white border border-[#D9D4C7] text-[#5A5A40] rounded hover:bg-[#E5E1D5] hover:text-[#4A4A3A] transition-colors shadow-sm"
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
+              <textarea
+                value={courseInfoTemplate}
+                onChange={e => setCourseInfoTemplate(e.target.value)}
+                placeholder="在此編輯課程顯示格式..."
+                className="w-full p-3 h-28 resize-none focus:outline-none focus:ring-inset focus:ring-1 focus:ring-[#5A5A40] text-sm text-[#2D2D2A] leading-relaxed"
+              />
             </div>
           </div>
 
@@ -495,41 +544,6 @@ export default function ExportView({ students, teachers, classrooms, courses, en
       )}
 
       <div className="absolute bottom-6 right-6 flex flex-col items-end gap-3 z-40">
-        {/* Floating Sub-Buttons (Excel / PDF) */}
-        {isDownloadMenuOpen && (
-          <div className="flex flex-col items-end gap-3 mb-1 animate-in fade-in slide-in-from-bottom-3 duration-200">
-            {/* PDF Option */}
-            <div className="flex items-center gap-2.5">
-              <span className="px-2.5 py-1 bg-[#2D2D2A] text-white text-xs font-medium rounded-lg shadow-md">
-                下載 PDF (.pdf)
-              </span>
-              <button 
-                onClick={handleExportPDF}
-                disabled={isActionDisabled || isExportingPDF}
-                className="w-12 h-12 rounded-full bg-[#E11D48] text-white hover:bg-[#BE123C] flex items-center justify-center shadow-lg transition-transform hover:scale-105 active:scale-95"
-                title="下載 PDF"
-              >
-                <FileText size={20} />
-              </button>
-            </div>
-
-            {/* Excel Option */}
-            <div className="flex items-center gap-2.5">
-              <span className="px-2.5 py-1 bg-[#2D2D2A] text-white text-xs font-medium rounded-lg shadow-md">
-                下載 Excel (.xlsx)
-              </span>
-              <button 
-                onClick={handleExportExcel}
-                disabled={isActionDisabled || isExportingPDF}
-                className="w-12 h-12 rounded-full bg-[#16A34A] text-white hover:bg-[#15803D] flex items-center justify-center shadow-lg transition-transform hover:scale-105 active:scale-95"
-                title="下載 Excel"
-              >
-                <FileSpreadsheet size={20} />
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Preview Button */}
         <button 
           onClick={() => setIsPreviewOpen(true)}
@@ -537,8 +551,63 @@ export default function ExportView({ students, teachers, classrooms, courses, en
           className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-transform hover:scale-105 active:scale-95 ${isActionDisabled ? 'bg-[#E5E1D5] text-[#8A8475] cursor-not-allowed' : 'bg-white text-[#5A5A40] hover:bg-[#F9F8F4] border border-[#D9D4C7]'}`}
           title="預覽課表"
         >
-          <Eye size={24} />
+          <FileSearch size={24} />
         </button>
+        
+        {/* Floating Sub-Buttons (Excel / PDF) */}
+        <AnimatePresence>
+          {isDownloadMenuOpen && (
+            <motion.div 
+              initial={{ opacity: 0, height: 0, y: 10 }}
+              animate={{ opacity: 1, height: 'auto', y: 0 }}
+              exit={{ opacity: 0, height: 0, y: 10 }}
+              transition={{ duration: 0.2 }}
+              className="flex flex-col items-end gap-3 overflow-hidden py-1"
+            >
+              {/* PDF Option */}
+              <motion.div 
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+                transition={{ delay: 0.05 }}
+                className="flex items-center gap-2.5"
+              >
+                <span className="px-2.5 py-1 bg-[#2D2D2A] text-white text-xs font-medium rounded-lg shadow-md whitespace-nowrap">
+                  下載 PDF (.pdf)
+                </span>
+                <button 
+                  onClick={handleExportPDF}
+                  disabled={isActionDisabled || isExportingPDF}
+                  className="w-12 h-12 rounded-full shrink-0 bg-[#E11D48] text-white hover:bg-[#BE123C] flex items-center justify-center shadow-lg transition-transform hover:scale-105 active:scale-95"
+                  title="下載 PDF"
+                >
+                  <FileText size={20} />
+                </button>
+              </motion.div>
+
+              {/* Excel Option */}
+              <motion.div 
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+                transition={{ delay: 0 }}
+                className="flex items-center gap-2.5"
+              >
+                <span className="px-2.5 py-1 bg-[#2D2D2A] text-white text-xs font-medium rounded-lg shadow-md whitespace-nowrap">
+                  下載 Excel (.xlsx)
+                </span>
+                <button 
+                  onClick={handleExportExcel}
+                  disabled={isActionDisabled || isExportingPDF}
+                  className="w-12 h-12 rounded-full shrink-0 bg-[#16A34A] text-white hover:bg-[#15803D] flex items-center justify-center shadow-lg transition-transform hover:scale-105 active:scale-95"
+                  title="下載 Excel"
+                >
+                  <FileSpreadsheet size={20} />
+                </button>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Main Download Toggle Button */}
         <button 
@@ -556,7 +625,7 @@ export default function ExportView({ students, teachers, classrooms, courses, en
           ) : isDownloadMenuOpen ? (
             <X size={24} />
           ) : (
-            <Download size={24} />
+            <ArrowDownToLine size={24} />
           )}
         </button>
       </div>
