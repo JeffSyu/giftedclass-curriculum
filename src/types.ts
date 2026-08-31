@@ -26,6 +26,7 @@ export interface Student {
   id: string;
   name: string;
   grade: Grade;
+  className?: string;
   categoryIds?: string[];
 }
 

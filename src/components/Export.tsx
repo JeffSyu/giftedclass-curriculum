@@ -26,7 +26,7 @@ const THEMES = {
 type ThemeKey = keyof typeof THEMES;
 
 export default function ExportView({ students, teachers, classrooms, courses, enrollments, timeSlots }: ExportProps) {
-  const [exportType, setExportType] = useState<'student' | 'teacher' | 'classroom' | 'grade'>('student');
+  const [exportType, setExportType] = useState<'student' | 'teacher' | 'classroom' | 'grade' | 'attendance'>('student');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   
   // Student Filters
@@ -89,6 +89,62 @@ export default function ExportView({ students, teachers, classrooms, courses, en
     return text.split('\n').filter(line => line.trim() !== '').join('\n');
   };
 
+  
+  const generateAttendanceGridData = (course: Course) => {
+    const daysMap = { '1': '星期一', '2': '星期二', '3': '星期三', '4': '星期四', '5': '星期五' };
+    
+    const courseTimeSlots = (course.timeSlotIds || []).map(slotKey => {
+      const [d, tsId] = slotKey.split('_');
+      const ts = timeSlots.find(t => t.id === tsId);
+      return {
+        slotKey,
+        day: d,
+        tsId,
+        tsName: ts ? ts.name : '',
+        dayName: (daysMap as any)[d] || '',
+        startTime: ts ? ts.startTime : ''
+      };
+    });
+    
+    courseTimeSlots.sort((a, b) => {
+      if (a.day !== b.day) return Number(a.day) - Number(b.day);
+      return a.startTime.localeCompare(b.startTime);
+    });
+
+    const headers = ['節次', ...courseTimeSlots.map(ts => `${ts.dayName} ${ts.tsName}`)];
+    if (headers.length === 1) headers.push('無排定時段');
+    
+    const enrolledStudentIds = enrollments
+      .filter(e => e.courseIds.includes(course.id))
+      .map(e => e.studentId);
+    
+    const enrolledStudents = students.filter(s => enrolledStudentIds.includes(s.id));
+    
+    enrolledStudents.sort((a, b) => {
+      if (a.grade !== b.grade) return a.grade - b.grade;
+      const classA = a.className || '';
+      const classB = b.className || '';
+      if (classA !== classB) return classA.localeCompare(classB);
+      return a.name.localeCompare(b.name);
+    });
+
+    const rows: string[][] = enrolledStudents.map(s => {
+      const row = [s.name];
+      for (let i = 1; i < headers.length; i++) {
+        row.push('');
+      }
+      return row;
+    });
+    
+    return {
+      titleRow: (showTitle && titleText) ? titleText : undefined,
+      subTitleRow: courseInfoTemplate.trim() ? formatCourseInfo(course) : undefined,
+      headers,
+      rows,
+      footer: showEntityName ? `課程名稱：${course.name}` : undefined
+    };
+  };
+
   const generateGridData = (coursesForEntity: Course[], entityName: string, entityTypeLabel: string) => {
     // Map slotKey (day_period) -> course formatted strings
     const slotMap = new Map<string, string[]>();
@@ -120,6 +176,7 @@ export default function ExportView({ students, teachers, classrooms, courses, en
 
     return {
       titleRow: (showTitle && titleText) ? titleText : undefined,
+      subTitleRow: undefined as string | undefined,
       headers,
       rows,
       footer: showEntityName ? `${entityTypeLabel}：${entityName}` : undefined
@@ -127,7 +184,7 @@ export default function ExportView({ students, teachers, classrooms, courses, en
   };
 
   const getAllExportGridData = () => {
-    const result: { title: string; filename: string; gridData: ReturnType<typeof generateGridData> }[] = [];
+    const result: { title: string; filename: string; gridData: { titleRow?: string; subTitleRow?: string; headers: string[]; rows: string[][]; footer?: string; } }[] = [];
     
     if (exportType === 'student') {
       const targetStudents = students.filter(s => selectedIds.includes(s.id));
@@ -176,6 +233,16 @@ export default function ExportView({ students, teachers, classrooms, courses, en
           gridData
         });
       });
+    } else if (exportType === 'attendance') {
+      const targetCourses = courses.filter(c => selectedIds.includes(c.id));
+      targetCourses.forEach(course => {
+        const gridData = generateAttendanceGridData(course);
+        result.push({
+          title: `${course.name} - 週點名單`,
+          filename: `${course.name}_週點名單`,
+          gridData
+        });
+      });
     }
     return result;
   };
@@ -184,14 +251,37 @@ export default function ExportView({ students, teachers, classrooms, courses, en
     const themeColor = THEMES[selectedTheme];
     let currentRow = 1;
 
+
+    const getColLetter = (colNum: number) => {
+      let temp, letter = '';
+      while (colNum > 0) {
+        temp = (colNum - 1) % 26;
+        letter = String.fromCharCode(temp + 65) + letter;
+        colNum = (colNum - temp - 1) / 26;
+      }
+      return letter;
+    };
+
     if (gridData.titleRow) {
       const titleCell = worksheet.getCell(`A${currentRow}`);
       titleCell.value = gridData.titleRow;
       titleCell.font = { size: 16, bold: true, name: 'Microsoft JhengHei' };
       titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
-      worksheet.mergeCells(`A${currentRow}:G${currentRow}`);
+      worksheet.mergeCells(`A${currentRow}:${getColLetter(gridData.headers.length)}${currentRow}`);
       worksheet.getRow(currentRow).height = 30;
       currentRow += 2; // skip a row
+    }
+
+
+    if (gridData.subTitleRow) {
+      const subTitleCell = worksheet.getCell(`A${currentRow}`);
+      subTitleCell.value = gridData.subTitleRow;
+      subTitleCell.font = { size: 12, name: 'Microsoft JhengHei' };
+      subTitleCell.alignment = { horizontal: 'center', vertical: 'top', wrapText: true };
+      worksheet.mergeCells(`A${currentRow}:${getColLetter(gridData.headers.length)}${currentRow}`);
+      const lines = (gridData.subTitleRow.match(/\n/g) || []).length + 1;
+      worksheet.getRow(currentRow).height = lines * 18 + 10;
+      currentRow += 1;
     }
 
     // Headers
@@ -242,10 +332,17 @@ export default function ExportView({ students, teachers, classrooms, courses, en
     }
 
     // Column widths
-    worksheet.getColumn(1).width = 12;
-    worksheet.getColumn(2).width = 16;
-    for (let i = 3; i <= 7; i++) {
-      worksheet.getColumn(i).width = 22;
+    if (exportType === 'attendance') {
+      worksheet.getColumn(1).width = 16;
+      for (let i = 2; i <= gridData.headers.length; i++) {
+        worksheet.getColumn(i).width = 16;
+      }
+    } else {
+      worksheet.getColumn(1).width = 12;
+      worksheet.getColumn(2).width = 16;
+      for (let i = 3; i <= gridData.headers.length; i++) {
+        worksheet.getColumn(i).width = 22;
+      }
     }
   };
 
@@ -342,11 +439,12 @@ export default function ExportView({ students, teachers, classrooms, courses, en
     }
   };
 
-  const renderTimetableTable = (gridData: { titleRow?: string; headers: string[]; rows: string[][]; footer?: string }) => {
+  const renderTimetableTable = (gridData: { titleRow?: string; subTitleRow?: string; headers: string[]; rows: string[][]; footer?: string }) => {
     const theme = THEMES[selectedTheme];
     return (
       <div className="bg-white p-6 rounded-lg overflow-x-auto border border-[#E5E1D5]">
         {gridData.titleRow && <h2 className="text-2xl font-bold text-center mb-6 text-[#2D2D2A]">{gridData.titleRow}</h2>}
+        {gridData.subTitleRow && <div className="text-m text-[#4A4A3A] mb-4 whitespace-pre-wrap leading-relaxed text-center">{gridData.subTitleRow}</div>}
         
         <table className="w-full border-collapse min-w-[700px] shadow-sm text-sm">
           <thead>
@@ -362,7 +460,7 @@ export default function ExportView({ students, teachers, classrooms, courses, en
             {gridData.rows.map((row, rIdx) => (
               <tr key={rIdx} className="bg-white">
                 {row.map((cell, cIdx) => (
-                  <td key={cIdx} className="py-3 px-4 border text-center whitespace-pre-wrap leading-relaxed text-[#2D2D2A]" style={{ borderColor: theme.cssBorder }}>
+                  <td key={cIdx} className="py-3 px-4 border text-center align-middle whitespace-pre-wrap leading-relaxed text-[#2D2D2A]" style={{ borderColor: theme.cssBorder }}>
                     {cell}
                   </td>
                 ))}
@@ -397,6 +495,7 @@ export default function ExportView({ students, teachers, classrooms, courses, en
   }
   else if (exportType === 'teacher') listData = teachers;
   else if (exportType === 'classroom') listData = classrooms;
+  else if (exportType === 'attendance') listData = courses;
   else if (exportType === 'grade') {
     listData = [
       { id: '7', name: '七年級' },
@@ -416,7 +515,8 @@ export default function ExportView({ students, teachers, classrooms, courses, en
           <button className={`pb-3 font-medium text-sm focus:outline-none transition-colors ${exportType === 'student' ? 'border-b-2 border-[#5A5A40] text-[#4A4A3A] font-bold' : 'text-[#8A8475] border-b-2 border-transparent hover:text-[#5A5A40]'}`} onClick={() => {setExportType('student'); setSelectedIds([]);}}>學生課表</button>
           <button className={`pb-3 font-medium text-sm focus:outline-none transition-colors ${exportType === 'teacher' ? 'border-b-2 border-[#5A5A40] text-[#4A4A3A] font-bold' : 'text-[#8A8475] border-b-2 border-transparent hover:text-[#5A5A40]'}`} onClick={() => {setExportType('teacher'); setSelectedIds([]);}}>教師課表</button>
           <button className={`pb-3 font-medium text-sm focus:outline-none transition-colors ${exportType === 'classroom' ? 'border-b-2 border-[#5A5A40] text-[#4A4A3A] font-bold' : 'text-[#8A8475] border-b-2 border-transparent hover:text-[#5A5A40]'}`} onClick={() => {setExportType('classroom'); setSelectedIds([]);}}>教室使用表</button>
-          <button className={`pb-3 font-medium text-sm focus:outline-none transition-colors ${exportType === 'grade' ? 'border-b-2 border-[#5A5A40] text-[#4A4A3A] font-bold' : 'text-[#8A8475] border-b-2 border-transparent hover:text-[#5A5A40]'}`} onClick={() => setExportType('grade')}>年級總表</button>
+          <button className={`pb-3 font-medium text-sm focus:outline-none transition-colors ${exportType === 'grade' ? 'border-b-2 border-[#5A5A40] text-[#4A4A3A] font-bold' : 'text-[#8A8475] border-b-2 border-transparent hover:text-[#5A5A40]'}`} onClick={() => {setExportType('grade'); setSelectedIds([]);}}>年級總表</button>
+          <button className={`pb-3 font-medium text-sm focus:outline-none transition-colors ${exportType === 'attendance' ? 'border-b-2 border-[#5A5A40] text-[#4A4A3A] font-bold' : 'text-[#8A8475] border-b-2 border-transparent hover:text-[#5A5A40]'}`} onClick={() => {setExportType('attendance'); setSelectedIds([]);}}>週點名單</button>
         </div>
         
         <div className="flex-1 flex flex-col overflow-y-hidden bg-white">
@@ -702,6 +802,11 @@ export default function ExportView({ students, teachers, classrooms, courses, en
                 {item.gridData.titleRow}
               </h2>
             )}
+            {item.gridData.subTitleRow && (
+              <div className="text-m text-[#4A4A3A] mb-4 whitespace-pre-wrap text-center">
+                {item.gridData.subTitleRow}
+              </div>
+            )}
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr>
@@ -726,7 +831,7 @@ export default function ExportView({ students, teachers, classrooms, courses, en
                     {row.map((cell, cIdx) => (
                       <td 
                         key={cIdx} 
-                        className="py-3 px-3 border text-center whitespace-pre-wrap leading-relaxed text-sm text-[#2D2D2A]"
+                        className="py-3 px-3 border text-center align-middle whitespace-pre-wrap leading-relaxed text-sm text-[#2D2D2A]"
                         style={{ borderColor: THEMES[selectedTheme].cssBorder }}
                       >
                         {cell}

@@ -18,6 +18,34 @@ export default function Courses({ courses, setCourses, timeSlots, teachers, clas
   const [confirmDialog, setConfirmDialog] = useState<{ message: string, onConfirm: () => void } | null>(null);
   const [headerTarget, setHeaderTarget] = useState<HTMLElement | null>(null);
 
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === courses.length && courses.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(courses.map(c => c.id)));
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    const newSet = new Set(selectedIds);
+    if (newSet.has(id)) newSet.delete(id);
+    else newSet.add(id);
+    setSelectedIds(newSet);
+  };
+
+  const removeSelected = () => {
+    setConfirmDialog({
+      message: `確定要刪除選取的 ${selectedIds.size} 筆課程嗎？`,
+      onConfirm: () => {
+        setCourses(courses.filter(c => !selectedIds.has(c.id)));
+        setSelectedIds(new Set());
+        setConfirmDialog(null);
+      }
+    });
+  };
+
   useEffect(() => {
     setHeaderTarget(document.getElementById('header-actions'));
   }, []);
@@ -132,6 +160,11 @@ export default function Courses({ courses, setCourses, timeSlots, teachers, clas
 
   const actionButtons = (
     <div className="flex gap-2">
+      {selectedIds.size > 0 && (
+        <button onClick={removeSelected} className="flex items-center gap-2 px-4 py-1.5 bg-[#FAF5F5] text-[#A34A4A] border border-[#E8D0D0] rounded-full text-sm font-medium hover:bg-[#F5EAEA] transition-colors mr-2">
+          <Trash2 size={14} /> ({selectedIds.size})
+        </button>
+      )}
       <input type="file" accept=".csv" className="hidden" ref={fileInputRef} onChange={handleUpload} />
       <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-4 py-1.5 border border-[#5A5A40] text-[#5A5A40] rounded-full text-sm font-medium hover:bg-[#5A5A40]/5 transition-colors shadow-sm">
         <Upload size={14} />
@@ -153,6 +186,9 @@ export default function Courses({ courses, setCourses, timeSlots, teachers, clas
         <table className="w-full text-left text-sm relative">
           <thead className="bg-[#F9F8F4] border-b border-[#E5E1D5] sticky top-0 z-10 shadow-sm">
             <tr className="text-[11px] text-[#8A8475] uppercase tracking-wider">
+              <th className="px-4 py-4 w-10 text-center">
+                <input type="checkbox" checked={selectedIds.size === courses.length && courses.length > 0} onChange={toggleSelectAll} className="rounded text-[#5A5A40] focus:ring-[#5A5A40] border-[#D9D4C7]" />
+              </th>
               <th className="px-6 py-4 font-bold">課程代碼</th>
               <th className="px-6 py-4 font-bold">課程名稱</th>
               <th className="px-6 py-4 font-bold">開放年級</th>
@@ -163,7 +199,10 @@ export default function Courses({ courses, setCourses, timeSlots, teachers, clas
           </thead>
           <tbody className="divide-y divide-[#F2EFE9]">
             {courses.map(course => (
-              <tr key={course.id} className="hover:bg-[#FDFBF7] transition-colors group">
+              <tr key={course.id} className={`hover:bg-[#FDFBF7] transition-colors group ${selectedIds.has(course.id) ? 'bg-[#FDFBF7]' : 'bg-white'}`}>
+                <td className="px-4 py-3 text-center">
+                  <input type="checkbox" checked={selectedIds.has(course.id)} onChange={() => toggleSelect(course.id)} className="rounded text-[#5A5A40] focus:ring-[#5A5A40] border-[#D9D4C7]" />
+                </td>
                 <td className="px-6 py-3 font-mono text-[#8A8475]">{course.id}</td>
                 <td className="px-6 py-3 font-medium text-[#2D2D2A]">{course.name}</td>
                 <td className="px-6 py-3 text-[#5A5A40]">{course.targetGrades.map(g => `${g}年級`).join(', ')}</td>
@@ -183,7 +222,7 @@ export default function Courses({ courses, setCourses, timeSlots, teachers, clas
             ))}
             {courses.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-6 py-12 text-center text-[#8A8475] text-sm bg-white">目前沒有課程，請點擊右上角按鈕新增</td>
+                <td colSpan={7} className="px-6 py-12 text-center text-[#8A8475] text-sm bg-white">目前沒有課程，請點擊右上角按鈕新增</td>
               </tr>
             )}
           </tbody>
