@@ -25,8 +25,98 @@ const THEMES = {
 };
 type ThemeKey = keyof typeof THEMES;
 
+
+interface RichTextChunk {
+  text: string;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  size: 'normal' | 'large' | 'small';
+}
+
+const parseStyledText = (input: string): RichTextChunk[] => {
+  if (!input) return [];
+  const regex = /(\[粗體\]|\[斜體\]|\[底線\]|\[大字體\]|\[小字體\]|\[預設\])/g;
+  const parts = input.split(regex);
+  
+  let currentState = { bold: false, italic: false, underline: false, size: 'normal' as const };
+  const chunks: RichTextChunk[] = [];
+  
+  parts.forEach(part => {
+    if (!part) return;
+    switch (part) {
+      case '[粗體]': currentState.bold = true; break;
+      case '[斜體]': currentState.italic = true; break;
+      case '[底線]': currentState.underline = true; break;
+      case '[大字體]': currentState.size = 'large'; break;
+      case '[小字體]': currentState.size = 'small'; break;
+      case '[預設]': 
+        currentState = { bold: false, italic: false, underline: false, size: 'normal' }; 
+        break;
+      default:
+        chunks.push({
+          text: part,
+          bold: currentState.bold,
+          italic: currentState.italic,
+          underline: currentState.underline,
+          size: currentState.size
+        });
+    }
+  });
+  return chunks;
+};
+
+const renderReactRichText = (input: string) => {
+  if (!/\[(粗體|斜體|底線|大字體|小字體|預設)\]/.test(input)) return input;
+  
+  const chunks = parseStyledText(input);
+  return (
+    <>
+      {chunks.map((chunk, i) => {
+        let classes = [];
+        if (chunk.bold) classes.push('font-bold');
+        if (chunk.italic) classes.push('italic');
+        if (chunk.underline) classes.push('underline');
+        if (chunk.size === 'large') classes.push('text-lg');
+        else if (chunk.size === 'small') classes.push('text-xs');
+        
+        return <span key={i} className={classes.join(' ')}>{chunk.text}</span>;
+      })}
+    </>
+  );
+};
+
+const getExcelRichText = (input: string, baseFontName = 'Microsoft JhengHei', isFirstCol = false) => {
+  if (!/\[(粗體|斜體|底線|大字體|小字體|預設)\]/.test(input)) {
+    return input;
+  }
+  
+  const chunks = parseStyledText(input);
+  const baseSize = isFirstCol ? 12 : 11;
+  const baseBold = isFirstCol;
+  
+  return {
+    richText: chunks.map(chunk => {
+      let size = baseSize;
+      if (chunk.size === 'large') size = baseSize + 3;
+      if (chunk.size === 'small') size = baseSize - 2;
+      
+      return {
+        text: chunk.text,
+        font: {
+          name: baseFontName,
+          size: size,
+          bold: baseBold || chunk.bold,
+          italic: chunk.italic,
+          underline: chunk.underline ? true : false,
+        }
+      };
+    })
+  };
+};
+
 export default function ExportView({ students, teachers, classrooms, courses, enrollments, timeSlots }: ExportProps) {
-  const [exportType, setExportType] = useState<'student' | 'teacher' | 'classroom' | 'grade' | 'attendance'>('student');
+  const [exportType, setExportType] = useState<'student' | 'teacher' | 'classroom' | 'grade' | 'attendance' | 'pullout'>('student');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   
   // Student Filters
@@ -37,11 +127,13 @@ export default function ExportView({ students, teachers, classrooms, courses, en
   const [showTitle, setShowTitle] = useState(false);
   const [titleText, setTitleText] = useState('課表');
   const [showEntityName, setShowEntityName] = useState(true);
+  const [entityNamePosition, setEntityNamePosition] = useState<'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'>('bottom-left');
   const [selectedTheme, setSelectedTheme] = useState<ThemeKey>('default');
   
   // Course Info Template
   const [courseInfoTemplate, setCourseInfoTemplate] = useState<string>("[課程名稱]\n[教師]\n[教室]");
-  const templateTags = ['[課程名稱]', '[年級]', '[類別]', '[教師]', '[教室]'];
+  const templateTags = ['[課程名稱]', '[年級]', '[類別]', '[教師]', '[教室]', '[學生]'];
+  const styleTags = ['[粗體]', '[斜體]', '[底線]', '[大字體]', '[小字體]', '[預設]'];
 
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState(false);
@@ -63,7 +155,7 @@ export default function ExportView({ students, teachers, classrooms, courses, en
   const days = [1, 2, 3, 4, 5];
   const dayNames = ['星期一', '星期二', '星期三', '星期四', '星期五'];
 
-  const formatCourseInfo = (c: Course) => {
+  const formatCourseInfo = (c: Course, targetClass?: string, targetGrade?: number) => {
     let text = courseInfoTemplate;
     text = text.replace(/\[課程名稱\]/g, c.name || '');
     text = text.replace(/\[年級\]/g, (c.targetGrades || []).join(','));
@@ -85,6 +177,17 @@ export default function ExportView({ students, teachers, classrooms, courses, en
       roomText = classrooms.find(r => r.id === c.classroomId)?.name || '';
     }
     text = text.replace(/\[教室\]/g, roomText);
+    
+    let studentText = '';
+    const enrolledStudentIds = enrollments.filter(e => e.courseIds.includes(c.id)).map(e => e.studentId);
+    let enrolledStudents = students.filter(s => enrolledStudentIds.includes(s.id));
+    if (targetClass && targetGrade !== undefined) {
+      enrolledStudents = enrolledStudents.filter(s => s.className === targetClass && s.grade === targetGrade);
+    } else if (targetClass) {
+      enrolledStudents = enrolledStudents.filter(s => s.className === targetClass);
+    }
+    studentText = enrolledStudents.map(s => s.name).join('、');
+    text = text.replace(/\[學生\]/g, studentText);
     
     return text.split('\n').filter(line => line.trim() !== '').join('\n');
   };
@@ -141,15 +244,18 @@ export default function ExportView({ students, teachers, classrooms, courses, en
       subTitleRow: courseInfoTemplate.trim() ? formatCourseInfo(course) : undefined,
       headers,
       rows,
-      footer: showEntityName ? `課程名稱：${course.name}` : undefined
+            headerLeft: showEntityName && entityNamePosition === 'top-left' ? `課程名稱：${course.name}` : undefined,
+      headerRight: showEntityName && entityNamePosition === 'top-right' ? `課程名稱：${course.name}` : undefined,
+      footerLeft: showEntityName && entityNamePosition === 'bottom-left' ? `課程名稱：${course.name}` : undefined,
+      footerRight: showEntityName && entityNamePosition === 'bottom-right' ? `課程名稱：${course.name}` : undefined
     };
   };
 
-  const generateGridData = (coursesForEntity: Course[], entityName: string, entityTypeLabel: string) => {
+  const generateGridData = (coursesForEntity: Course[], entityName: string, entityTypeLabel: string, targetClass?: string, targetGrade?: number) => {
     // Map slotKey (day_period) -> course formatted strings
     const slotMap = new Map<string, string[]>();
     coursesForEntity.forEach(c => {
-      const formatted = formatCourseInfo(c);
+      const formatted = formatCourseInfo(c, targetClass, targetGrade);
       (c.timeSlotIds || []).forEach(sid => {
         const existing = slotMap.get(sid) || [];
         existing.push(formatted);
@@ -179,12 +285,15 @@ export default function ExportView({ students, teachers, classrooms, courses, en
       subTitleRow: undefined as string | undefined,
       headers,
       rows,
-      footer: showEntityName ? `${entityTypeLabel}：${entityName}` : undefined
+            headerLeft: showEntityName && entityNamePosition === 'top-left' ? `${entityTypeLabel}：${entityName}` : undefined,
+      headerRight: showEntityName && entityNamePosition === 'top-right' ? `${entityTypeLabel}：${entityName}` : undefined,
+      footerLeft: showEntityName && entityNamePosition === 'bottom-left' ? `${entityTypeLabel}：${entityName}` : undefined,
+      footerRight: showEntityName && entityNamePosition === 'bottom-right' ? `${entityTypeLabel}：${entityName}` : undefined
     };
   };
 
   const getAllExportGridData = () => {
-    const result: { title: string; filename: string; gridData: { titleRow?: string; subTitleRow?: string; headers: string[]; rows: string[][]; footer?: string; } }[] = [];
+    const result: { title: string; filename: string; gridData: { titleRow?: string; subTitleRow?: string; headers: string[]; rows: string[][]; headerLeft?: string; headerRight?: string; footerLeft?: string; footerRight?: string; } }[] = [];
     
     if (exportType === 'student') {
       const targetStudents = students.filter(s => selectedIds.includes(s.id));
@@ -233,6 +342,26 @@ export default function ExportView({ students, teachers, classrooms, courses, en
           gridData
         });
       });
+
+    } else if (exportType === 'pullout') {
+      selectedIds.forEach(classId => {
+        const [gradeStr, className] = classId.split('_');
+        const grade = Number(gradeStr);
+        const classStudents = students.filter(s => s.grade === grade && s.className === className);
+        const classStudentIds = classStudents.map(s => s.id);
+        const classEnrollments = enrollments.filter(e => classStudentIds.includes(e.studentId));
+        const courseIds = new Set<string>();
+        classEnrollments.forEach(e => {
+          e.courseIds.forEach(cid => courseIds.add(cid));
+        });
+        const pulloutCourses = courses.filter(c => courseIds.has(c.id));
+        const gridData = generateGridData(pulloutCourses, `${grade}年級${className}班`, '班級', className, grade);
+        result.push({
+          title: `${grade}年級${className}班 原班抽課表`,
+          filename: `${grade}年級${className}班_原班抽課表`,
+          gridData
+        });
+      });
     } else if (exportType === 'attendance') {
       const targetCourses = courses.filter(c => selectedIds.includes(c.id));
       targetCourses.forEach(course => {
@@ -275,22 +404,44 @@ export default function ExportView({ students, teachers, classrooms, courses, en
 
     if (gridData.subTitleRow) {
       const subTitleCell = worksheet.getCell(`A${currentRow}`);
-      subTitleCell.value = gridData.subTitleRow;
-      subTitleCell.font = { size: 12, name: 'Microsoft JhengHei' };
-      subTitleCell.alignment = { horizontal: 'center', vertical: 'top', wrapText: true };
+              if (typeof gridData.subTitleRow === 'string' && /\[(粗體|斜體|底線|大字體|小字體|預設)\]/.test(gridData.subTitleRow)) {
+          subTitleCell.value = getExcelRichText(gridData.subTitleRow, 'Microsoft JhengHei', false);
+        } else {
+          subTitleCell.value = gridData.subTitleRow;
+        }
+        if (!subTitleCell.value || typeof subTitleCell.value !== 'object' || !('richText' in subTitleCell.value)) {
+          subTitleCell.font = { name: 'Microsoft JhengHei', size: 12 };
+        }
+        subTitleCell.alignment = { horizontal: 'center', vertical: 'top', wrapText: true };
       worksheet.mergeCells(`A${currentRow}:${getColLetter(gridData.headers.length)}${currentRow}`);
       const lines = (gridData.subTitleRow.match(/\n/g) || []).length + 1;
       worksheet.getRow(currentRow).height = lines * 18 + 10;
       currentRow += 1;
     }
 
+    if (gridData.headerLeft || gridData.headerRight) {
+      if (gridData.headerLeft) {
+        const hCell = worksheet.getCell(`A${currentRow}`);
+        hCell.value = gridData.headerLeft;
+        hCell.font = { name: 'Microsoft JhengHei', bold: true };
+        hCell.alignment = { horizontal: 'left', vertical: 'middle' };
+      }
+      if (gridData.headerRight) {
+        const lastCol = getColLetter(gridData.headers.length);
+        const hCell = worksheet.getCell(`${lastCol}${currentRow}`);
+        hCell.value = gridData.headerRight;
+        hCell.font = { name: 'Microsoft JhengHei', bold: true };
+        hCell.alignment = { horizontal: 'right', vertical: 'middle' };
+      }
+      currentRow += 1;
+    }
     // Headers
     const headerRow = worksheet.getRow(currentRow);
     gridData.headers.forEach((h: string, i: number) => {
       const cell = headerRow.getCell(i + 1);
       cell.value = h;
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: themeColor.headerBg } };
-      cell.font = { bold: true, color: { argb: themeColor.headerText }, name: 'Microsoft JhengHei' };
+      cell.font = { bold: true, color: { argb: themeColor.headerText }, name: 'Microsoft JhengHei', size: 12 };
       cell.alignment = { horizontal: 'center', vertical: 'middle' };
       cell.border = {
         top: { style: 'thin', color: { argb: themeColor.border } },
@@ -308,8 +459,14 @@ export default function ExportView({ students, teachers, classrooms, courses, en
       let maxLines = 1;
       rData.forEach((val: string, i: number) => {
         const cell = row.getCell(i + 1);
-        cell.value = val;
-        cell.font = { name: 'Microsoft JhengHei' };
+        if (typeof val === 'string' && /\[(粗體|斜體|底線|大字體|小字體|預設)\]/.test(val)) {
+          cell.value = getExcelRichText(val, 'Microsoft JhengHei', i === 0);
+        } else {
+          cell.value = val;
+        }
+        if (!cell.value || typeof cell.value !== 'object' || !('richText' in cell.value)) {
+          cell.font = { name: 'Microsoft JhengHei', bold: i === 0, size: i === 0 ? 12 : 11 };
+        }
         cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
         cell.border = {
           top: { style: 'thin', color: { argb: themeColor.border } },
@@ -324,11 +481,21 @@ export default function ExportView({ students, teachers, classrooms, courses, en
       currentRow++;
     });
 
-    if (gridData.footer) {
+    if (gridData.footerLeft || gridData.footerRight) {
       currentRow++; // empty row
-      const footerCell = worksheet.getCell(`A${currentRow}`);
-      footerCell.value = gridData.footer;
-      footerCell.font = { name: 'Microsoft JhengHei', bold: true };
+      if (gridData.footerLeft) {
+        const fCell = worksheet.getCell(`A${currentRow}`);
+        fCell.value = gridData.footerLeft;
+        fCell.font = { name: 'Microsoft JhengHei', bold: true };
+        fCell.alignment = { horizontal: 'left', vertical: 'middle' };
+      }
+      if (gridData.footerRight) {
+        const lastCol = getColLetter(gridData.headers.length);
+        const fCell = worksheet.getCell(`${lastCol}${currentRow}`);
+        fCell.value = gridData.footerRight;
+        fCell.font = { name: 'Microsoft JhengHei', bold: true };
+        fCell.alignment = { horizontal: 'right', vertical: 'middle' };
+      }
     }
 
     // Column widths
@@ -439,18 +606,24 @@ export default function ExportView({ students, teachers, classrooms, courses, en
     }
   };
 
-  const renderTimetableTable = (gridData: { titleRow?: string; subTitleRow?: string; headers: string[]; rows: string[][]; footer?: string }) => {
+  const renderTimetableTable = (gridData: { titleRow?: string; subTitleRow?: string; headers: string[]; rows: string[][]; headerLeft?: string; headerRight?: string; footerLeft?: string; footerRight?: string; }) => {
     const theme = THEMES[selectedTheme];
     return (
       <div className="bg-white p-6 rounded-lg overflow-x-auto border border-[#E5E1D5]">
         {gridData.titleRow && <h2 className="text-2xl font-bold text-center mb-6 text-[#2D2D2A]">{gridData.titleRow}</h2>}
-        {gridData.subTitleRow && <div className="text-m text-[#4A4A3A] mb-4 whitespace-pre-wrap leading-relaxed text-center">{gridData.subTitleRow}</div>}
+        {gridData.subTitleRow && <div className="text-m text-[#4A4A3A] mb-4 whitespace-pre-wrap leading-relaxed text-center">{renderReactRichText(gridData.subTitleRow)}</div>}
         
+        {(gridData.headerLeft || gridData.headerRight) && (
+          <div className="flex justify-between text-sm font-bold text-[#4A4A3A] mb-2 px-1">
+            <div>{gridData.headerLeft}</div>
+            <div>{gridData.headerRight}</div>
+          </div>
+        )}
         <table className="w-full border-collapse min-w-[700px] shadow-sm text-sm">
           <thead>
             <tr>
               {gridData.headers.map((h, i) => (
-                <th key={i} className="py-3 px-4 border text-center font-bold" style={{ backgroundColor: theme.cssBg, color: theme.cssText, borderColor: theme.cssBorder }}>
+                <th key={i} className="py-3 px-4 border text-center font-bold text-base" style={{ backgroundColor: theme.cssBg, color: theme.cssText, borderColor: theme.cssBorder }}>
                   {h}
                 </th>
               ))}
@@ -460,8 +633,8 @@ export default function ExportView({ students, teachers, classrooms, courses, en
             {gridData.rows.map((row, rIdx) => (
               <tr key={rIdx} className="bg-white">
                 {row.map((cell, cIdx) => (
-                  <td key={cIdx} className="py-3 px-4 border text-center align-middle whitespace-pre-wrap leading-relaxed text-[#2D2D2A]" style={{ borderColor: theme.cssBorder }}>
-                    {cell}
+                  <td key={cIdx} className={`py-3 px-4 border text-center align-middle whitespace-pre-wrap leading-relaxed text-[#2D2D2A] ${cIdx === 0 ? 'text-base font-bold' : ''}`} style={{ borderColor: theme.cssBorder }}>
+                    {renderReactRichText(cell)}
                   </td>
                 ))}
               </tr>
@@ -469,7 +642,12 @@ export default function ExportView({ students, teachers, classrooms, courses, en
           </tbody>
         </table>
 
-        {gridData.footer && <div className="mt-4 font-bold text-sm text-[#4A4A3A]">{gridData.footer}</div>}
+        {(gridData.footerLeft || gridData.footerRight) && (
+          <div className="flex justify-between text-sm font-bold text-[#4A4A3A] mt-4 px-1">
+            <div>{gridData.footerLeft}</div>
+            <div>{gridData.footerRight}</div>
+          </div>
+        )}
       </div>
     );
   };
@@ -482,7 +660,7 @@ export default function ExportView({ students, teachers, classrooms, courses, en
     return renderTimetableTable(items[0].gridData);
   };
 
-  let listData: {id: string, name: string}[] = [];
+  let listData: {id: string, name: string, grade?: number}[] = [];
   if (exportType === 'student') {
     let filtered = students;
     if (filterStudentGrade !== '') {
@@ -496,6 +674,25 @@ export default function ExportView({ students, teachers, classrooms, courses, en
   else if (exportType === 'teacher') listData = teachers;
   else if (exportType === 'classroom') listData = classrooms;
   else if (exportType === 'attendance') listData = courses;
+
+  else if (exportType === 'pullout') {
+    const classesSet = new Set<string>();
+    students.forEach(s => {
+      if (s.className && s.grade) {
+        classesSet.add(`${s.grade}_${s.className}`);
+      }
+    });
+    listData = Array.from(classesSet).map(cStr => {
+      const [g, c] = cStr.split('_');
+      return { id: cStr, name: `${c}班`, grade: Number(g) };
+    }).sort((a, b) => {
+      if (a.grade !== b.grade) return (a.grade || 0) - (b.grade || 0);
+      const numA = parseInt(a.name) || 0;
+      const numB = parseInt(b.name) || 0;
+      if (numA !== numB) return numA - numB;
+      return a.name.localeCompare(b.name);
+    });
+  }
   else if (exportType === 'grade') {
     listData = [
       { id: '7', name: '七年級' },
@@ -517,6 +714,8 @@ export default function ExportView({ students, teachers, classrooms, courses, en
           <button className={`pb-3 font-medium text-sm focus:outline-none transition-colors ${exportType === 'classroom' ? 'border-b-2 border-[#5A5A40] text-[#4A4A3A] font-bold' : 'text-[#8A8475] border-b-2 border-transparent hover:text-[#5A5A40]'}`} onClick={() => {setExportType('classroom'); setSelectedIds([]);}}>教室使用表</button>
           <button className={`pb-3 font-medium text-sm focus:outline-none transition-colors ${exportType === 'grade' ? 'border-b-2 border-[#5A5A40] text-[#4A4A3A] font-bold' : 'text-[#8A8475] border-b-2 border-transparent hover:text-[#5A5A40]'}`} onClick={() => {setExportType('grade'); setSelectedIds([]);}}>年級總表</button>
           <button className={`pb-3 font-medium text-sm focus:outline-none transition-colors ${exportType === 'attendance' ? 'border-b-2 border-[#5A5A40] text-[#4A4A3A] font-bold' : 'text-[#8A8475] border-b-2 border-transparent hover:text-[#5A5A40]'}`} onClick={() => {setExportType('attendance'); setSelectedIds([]);}}>週點名單</button>
+          <button className={`pb-3 font-medium text-sm focus:outline-none transition-colors ${exportType === 'pullout' ? 'border-b-2 border-[#5A5A40] text-[#4A4A3A] font-bold' : 'text-[#8A8475] border-b-2 border-transparent hover:text-[#5A5A40]'}`} onClick={() => {setExportType('pullout'); setSelectedIds([]);}}>原班抽課表</button>
+
         </div>
         
         <div className="flex-1 flex flex-col overflow-y-hidden bg-white">
@@ -553,17 +752,39 @@ export default function ExportView({ students, teachers, classrooms, courses, en
                 <button onClick={clearSelection} className="text-[#8A8475] hover:text-[#5A5A40] font-medium">清除</button>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              {listData.map(item => (
-                <label key={item.id} className={`flex items-center gap-2 p-3 rounded-lg cursor-pointer transition-colors border ${selectedIds.includes(item.id) ? 'bg-[#F9F8F4] border-[#5A5A40] shadow-sm text-[#4A4A3A] font-medium' : 'hover:bg-[#F9F8F4] border-[#E5E1D5] text-[#2D2D2A]'}`}>
-                  <input type="checkbox" checked={selectedIds.includes(item.id)} onChange={() => toggleSelection(item.id)} className="rounded text-[#5A5A40] focus:ring-[#5A5A40] border-[#D9D4C7]" />
-                  <span className="text-sm truncate">{item.name || item.id}</span>
-                </label>
-              ))}
-              {listData.length === 0 && (
-                <div className="col-span-full py-8 text-center text-[#8A8475] text-sm">無資料</div>
-              )}
-            </div>
+            {exportType === 'pullout' ? (
+              <div className="space-y-4">
+                {[7, 8, 9].map(grade => {
+                  const gradeItems = listData.filter((item: any) => item.grade === grade);
+                  if (gradeItems.length === 0) return null;
+                  return (
+                    <div key={grade}>
+                      <h4 className="text-sm font-bold text-[#8A8475] mb-2">{grade}年級</h4>
+                      <div className="grid grid-cols-2 gap-2">
+                        {gradeItems.map(item => (
+                          <label key={item.id} className={`flex items-center gap-2 p-3 rounded-lg cursor-pointer transition-colors border ${selectedIds.includes(item.id) ? 'bg-[#F9F8F4] border-[#5A5A40] shadow-sm text-[#4A4A3A] font-medium' : 'hover:bg-[#F9F8F4] border-[#E5E1D5] text-[#2D2D2A]'}`}>
+                            <input type="checkbox" checked={selectedIds.includes(item.id)} onChange={() => toggleSelection(item.id)} className="rounded text-[#5A5A40] focus:ring-[#5A5A40] border-[#D9D4C7]" />
+                            <span className="text-sm truncate">{item.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                {listData.map(item => (
+                  <label key={item.id} className={`flex items-center gap-2 p-3 rounded-lg cursor-pointer transition-colors border ${selectedIds.includes(item.id) ? 'bg-[#F9F8F4] border-[#5A5A40] shadow-sm text-[#4A4A3A] font-medium' : 'hover:bg-[#F9F8F4] border-[#E5E1D5] text-[#2D2D2A]'}`}>
+                    <input type="checkbox" checked={selectedIds.includes(item.id)} onChange={() => toggleSelection(item.id)} className="rounded text-[#5A5A40] focus:ring-[#5A5A40] border-[#D9D4C7]" />
+                    <span className="text-sm truncate">{item.name || item.id}</span>
+                  </label>
+                ))}
+                {listData.length === 0 && (
+                  <div className="col-span-full py-8 text-center text-[#8A8475] text-sm">無資料</div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -586,10 +807,26 @@ export default function ExportView({ students, teachers, classrooms, courses, en
               </div>
             </label>
 
-            <label className="flex items-center gap-3 p-3 bg-white border border-[#D9D4C7] rounded-lg cursor-pointer">
-              <input type="checkbox" checked={showEntityName} onChange={e => setShowEntityName(e.target.checked)} className="rounded text-[#5A5A40] focus:ring-[#5A5A40] border-[#D9D4C7]" />
-              <span className="text-sm font-medium text-[#2D2D2A]">顯示名稱 (置於表尾左下方)</span>
-            </label>
+            <div className="flex flex-col gap-2 p-3 bg-white border border-[#D9D4C7] rounded-lg">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input type="checkbox" checked={showEntityName} onChange={e => setShowEntityName(e.target.checked)} className="rounded text-[#5A5A40] focus:ring-[#5A5A40] border-[#D9D4C7]" />
+                <span className="text-sm font-medium text-[#2D2D2A]">顯示名稱</span>
+              </label>
+              {showEntityName && (
+                <div className="pl-7 mt-1">
+                  <select 
+                    value={entityNamePosition}
+                    onChange={e => setEntityNamePosition(e.target.value as any)}
+                    className="w-full px-3 py-1.5 text-sm bg-[#F9F8F4] border border-[#D9D4C7] rounded-md focus:ring-1 focus:ring-[#5A5A40] outline-none text-[#4A4A3A]"
+                  >
+                    <option value="top-left">表頭左上</option>
+                    <option value="top-right">表頭右上</option>
+                    <option value="bottom-left">表尾左下</option>
+                    <option value="bottom-right">表尾右下</option>
+                  </select>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="space-y-3">
@@ -600,6 +837,16 @@ export default function ExportView({ students, teachers, classrooms, courses, en
             <div className="bg-white border border-[#D9D4C7] rounded-lg overflow-hidden flex flex-col">
               <div className="p-2 border-b border-[#E5E1D5] bg-[#F9F8F4] flex flex-wrap gap-1.5">
                 {templateTags.map(tag => (
+                  <button 
+                    key={tag}
+                    onClick={() => setCourseInfoTemplate(prev => prev + tag)}
+                    className="px-2 py-1 text-xs font-medium bg-white border border-[#D9D4C7] text-[#5A5A40] rounded hover:bg-[#E5E1D5] hover:text-[#4A4A3A] transition-colors shadow-sm"
+                  >
+                    {tag}
+                  </button>
+                ))}
+                <div className="w-full h-px bg-[#D9D4C7] my-1" />
+                {styleTags.map(tag => (
                   <button 
                     key={tag}
                     onClick={() => setCourseInfoTemplate(prev => prev + tag)}
@@ -807,6 +1054,12 @@ export default function ExportView({ students, teachers, classrooms, courses, en
                 {item.gridData.subTitleRow}
               </div>
             )}
+            {(item.gridData.headerLeft || item.gridData.headerRight) && (
+              <div className="flex justify-between text-sm font-bold text-[#4A4A3A] mb-2 px-1">
+                <div>{item.gridData.headerLeft}</div>
+                <div>{item.gridData.headerRight}</div>
+              </div>
+            )}
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr>
@@ -831,19 +1084,20 @@ export default function ExportView({ students, teachers, classrooms, courses, en
                     {row.map((cell, cIdx) => (
                       <td 
                         key={cIdx} 
-                        className="py-3 px-3 border text-center align-middle whitespace-pre-wrap leading-relaxed text-sm text-[#2D2D2A]"
+                        className={`py-3 px-3 border text-center align-middle whitespace-pre-wrap leading-relaxed text-[#2D2D2A] ${cIdx === 0 ? 'text-base font-bold' : 'text-sm'}`}
                         style={{ borderColor: THEMES[selectedTheme].cssBorder }}
                       >
-                        {cell}
+                        {renderReactRichText(cell)}
                       </td>
                     ))}
                   </tr>
                 ))}
               </tbody>
             </table>
-            {item.gridData.footer && (
-              <div className="mt-4 font-bold text-sm text-[#4A4A3A]">
-                {item.gridData.footer}
+            {(item.gridData.footerLeft || item.gridData.footerRight) && (
+              <div className="flex justify-between mt-4 font-bold text-sm text-[#4A4A3A] px-1">
+                <div>{item.gridData.footerLeft}</div>
+                <div>{item.gridData.footerRight}</div>
               </div>
             )}
           </div>

@@ -1,49 +1,29 @@
 const fs = require('fs');
 let content = fs.readFileSync('src/components/Export.tsx', 'utf8');
 
+// React
 content = content.replace(
-  "titleRow: (showTitle && titleText) ? titleText : undefined,\n      headers,",
-  "titleRow: (showTitle && titleText) ? titleText : undefined,\n      subTitleRow: courseInfoTemplate.trim() ? formatCourseInfo(course) : undefined,\n      headers,"
+  "{gridData.subTitleRow && <div className=\"text-m text-[#4A4A3A] mb-4 whitespace-pre-wrap leading-relaxed text-center\">{gridData.subTitleRow}</div>}",
+  "{gridData.subTitleRow && <div className=\"text-m text-[#4A4A3A] mb-4 whitespace-pre-wrap leading-relaxed text-center\">{renderReactRichText(gridData.subTitleRow)}</div>}"
 );
 
-const getColLetterFn = `
-    const getColLetter = (colNum: number) => {
-      let temp, letter = '';
-      while (colNum > 0) {
-        temp = (colNum - 1) % 26;
-        letter = String.fromCharCode(temp + 65) + letter;
-        colNum = (colNum - temp - 1) / 26;
-      }
-      return letter;
-    };
-`;
-
+// PDF
 content = content.replace(
-  "    if (gridData.titleRow) {",
-  getColLetterFn + "\n    if (gridData.titleRow) {"
+  "{item.gridData.subTitleRow && (\n              <div className=\"text-sm text-[#4A4A3A] mb-4 whitespace-pre-wrap leading-relaxed text-center\">\n                {item.gridData.subTitleRow}\n              </div>\n            )}",
+  "{item.gridData.subTitleRow && (\n              <div className=\"text-sm text-[#4A4A3A] mb-4 whitespace-pre-wrap leading-relaxed text-center\">\n                {renderReactRichText(item.gridData.subTitleRow)}\n              </div>\n            )}"
 );
 
-content = content.replace(
-  "      const getColLetter = (colNum: number) => {\n        let temp, letter = '';\n        while (colNum > 0) {\n          temp = (colNum - 1) % 26;\n          letter = String.fromCharCode(temp + 65) + letter;\n          colNum = (colNum - temp - 1) / 26;\n        }\n        return letter;\n      };\n      worksheet.mergeCells(`A${currentRow}:${getColLetter(gridData.headers.length)}${currentRow}`);",
-  "      worksheet.mergeCells(`A${currentRow}:${getColLetter(gridData.headers.length)}${currentRow}`);"
-);
-
-const subTitleWorksheetStr = `
-    if (gridData.subTitleRow) {
-      const subTitleCell = worksheet.getCell(\`A\${currentRow}\`);
-      subTitleCell.value = gridData.subTitleRow;
-      subTitleCell.font = { size: 12, name: 'Microsoft JhengHei' };
-      subTitleCell.alignment = { horizontal: 'left', vertical: 'top', wrapText: true };
-      worksheet.mergeCells(\`A\${currentRow}:\${getColLetter(gridData.headers.length)}\${currentRow}\`);
-      const lines = (gridData.subTitleRow.match(/\\n/g) || []).length + 1;
-      worksheet.getRow(currentRow).height = lines * 18 + 10;
-      currentRow += 1;
-    }
-`;
-
-content = content.replace(
-  "    // Headers",
-  subTitleWorksheetStr + "\n    // Headers"
-);
+// Excel
+const excelSubtitleRegex = /subTitleCell\.value = gridData\.subTitleRow;\n\s*subTitleCell\.font = \{ name: 'Microsoft JhengHei', size: 12 \};\n\s*subTitleCell\.alignment = \{ horizontal: 'center', vertical: 'middle', wrapText: true \};/;
+const excelSubtitleNew = `        if (typeof gridData.subTitleRow === 'string' && /\\[(粗體|斜體|底線|大字體|小字體|預設)\\]/.test(gridData.subTitleRow)) {
+          subTitleCell.value = getExcelRichText(gridData.subTitleRow, 'Microsoft JhengHei', false);
+        } else {
+          subTitleCell.value = gridData.subTitleRow;
+        }
+        if (!subTitleCell.value || typeof subTitleCell.value !== 'object' || !('richText' in subTitleCell.value)) {
+          subTitleCell.font = { name: 'Microsoft JhengHei', size: 12 };
+        }
+        subTitleCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };`;
+content = content.replace(excelSubtitleRegex, excelSubtitleNew);
 
 fs.writeFileSync('src/components/Export.tsx', content);
