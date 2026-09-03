@@ -18,10 +18,10 @@ interface ExportProps {
 }
 
 const THEMES = {
-  default: { name: '預設(灰)', headerBg: 'FFF3F4F6', headerText: 'FF1F2937', border: 'FFD1D5DB', cssBg: '#F3F4F6', cssText: '#1F2937', cssBorder: '#D1D5DB' },
-  blue: { name: '清新藍', headerBg: 'FFE8F0FE', headerText: 'FF174EA6', border: 'FF8AB4F8', cssBg: '#E8F0FE', cssText: '#174EA6', cssBorder: '#8AB4F8' },
-  green: { name: '自然綠', headerBg: 'FFE6F4EA', headerText: 'FF0D652D', border: 'FF81C995', cssBg: '#E6F4EA', cssText: '#0D652D', cssBorder: '#81C995' },
-  warm: { name: '溫暖橘', headerBg: 'FFFCE8E6', headerText: 'FFA50E0E', border: 'FFF28B82', cssBg: '#FCE8E6', cssText: '#A50E0E', cssBorder: '#F28B82' },
+  default: { name: '預設', headerBg: 'FFF3F4F6', headerText: 'FF1F2937', border: 'FFD1D5DB', cssBg: '#F3F4F6', cssText: '#1F2937', cssBorder: '#D1D5DB' },
+  blue: { name: '天空', headerBg: 'FFE8F0FE', headerText: 'FF174EA6', border: 'FF8AB4F8', cssBg: '#E8F0FE', cssText: '#174EA6', cssBorder: '#8AB4F8' },
+  green: { name: '森林', headerBg: 'FFE6F4EA', headerText: 'FF0D652D', border: 'FF81C995', cssBg: '#E6F4EA', cssText: '#0D652D', cssBorder: '#81C995' },
+  warm: { name: '夕陽', headerBg: 'FFFCE8E6', headerText: 'FFA50E0E', border: 'FFF28B82', cssBg: '#FCE8E6', cssText: '#A50E0E', cssBorder: '#F28B82' },
 };
 type ThemeKey = keyof typeof THEMES;
 
@@ -39,7 +39,7 @@ const parseStyledText = (input: string): RichTextChunk[] => {
   const regex = /(\[粗體\]|\[斜體\]|\[底線\]|\[大字體\]|\[小字體\]|\[預設\])/g;
   const parts = input.split(regex);
   
-  let currentState = { bold: false, italic: false, underline: false, size: 'normal' as const };
+  let currentState = { bold: false, italic: false, underline: false, size: 'normal' as 'normal' | 'large' | 'small' };
   const chunks: RichTextChunk[] = [];
   
   parts.forEach(part => {
@@ -129,6 +129,7 @@ export default function ExportView({ students, teachers, classrooms, courses, en
   const [showEntityName, setShowEntityName] = useState(true);
   const [entityNamePosition, setEntityNamePosition] = useState<'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'>('bottom-left');
   const [selectedTheme, setSelectedTheme] = useState<ThemeKey>('default');
+  const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('landscape');
   
   // Course Info Template
   const [courseInfoTemplate, setCourseInfoTemplate] = useState<string>("[課程名稱]\n[教師]\n[教室]");
@@ -141,6 +142,24 @@ export default function ExportView({ students, teachers, classrooms, courses, en
   const [pdfProgress, setPdfProgress] = useState<string>('');
 
   const pdfContainerRef = useRef<HTMLDivElement>(null);
+  const templateTextareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const insertTag = (tag: string) => {
+    if (templateTextareaRef.current) {
+      const textarea = templateTextareaRef.current;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const newValue = courseInfoTemplate.substring(0, start) + tag + courseInfoTemplate.substring(end);
+      setCourseInfoTemplate(newValue);
+      
+      setTimeout(() => {
+        textarea.focus();
+        textarea.setSelectionRange(start + tag.length, start + tag.length);
+      }, 0);
+    } else {
+      setCourseInfoTemplate(prev => prev + tag);
+    }
+  };
 
   // Need categories for formatting
   const store = useAppStore();
@@ -379,6 +398,29 @@ export default function ExportView({ students, teachers, classrooms, courses, en
   const buildWorksheet = (worksheet: ExcelJS.Worksheet, gridData: any) => {
     const themeColor = THEMES[selectedTheme];
     let currentRow = 1;
+    worksheet.pageSetup.orientation = orientation;
+
+    if (orientation === 'portrait') {
+      worksheet.columns = [
+        { width: 6 },
+        { width: 10 },
+        { width: 14 },
+        { width: 14 },
+        { width: 14 },
+        { width: 14 },
+        { width: 14 },
+      ];
+    } else {
+      worksheet.columns = [
+        { width: 8 },
+        { width: 14 },
+        { width: 22 },
+        { width: 22 },
+        { width: 22 },
+        { width: 22 },
+        { width: 22 },
+      ];
+    }
 
 
     const getColLetter = (colNum: number) => {
@@ -467,7 +509,7 @@ export default function ExportView({ students, teachers, classrooms, courses, en
         if (!cell.value || typeof cell.value !== 'object' || !('richText' in cell.value)) {
           cell.font = { name: 'Microsoft JhengHei', bold: i === 0, size: i === 0 ? 12 : 11 };
         }
-        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        cell.alignment = { horizontal: 'center', vertical: i < 2 ? 'middle' : 'top', wrapText: true };
         cell.border = {
           top: { style: 'thin', color: { argb: themeColor.border } },
           left: { style: 'thin', color: { argb: themeColor.border } },
@@ -477,7 +519,7 @@ export default function ExportView({ students, teachers, classrooms, courses, en
         const lines = val.split('\n').length;
         if (lines > maxLines) maxLines = lines;
       });
-      row.height = maxLines * 16 + 10;
+      row.height = orientation === 'landscape' ? 45 : 70;
       currentRow++;
     });
 
@@ -545,7 +587,7 @@ export default function ExportView({ students, teachers, classrooms, courses, en
 
     try {
       const pdf = new jsPDF({
-        orientation: 'landscape',
+        orientation: orientation,
         unit: 'mm',
         format: 'a4'
       });
@@ -567,8 +609,8 @@ export default function ExportView({ students, teachers, classrooms, courses, en
         });
 
         const imgData = canvas.toDataURL('image/jpeg', 0.95);
-        const pageWidth = 297;
-        const pageHeight = 210;
+        const pageWidth = orientation === 'landscape' ? 297 : 210;
+        const pageHeight = orientation === 'landscape' ? 210 : 297;
         const margin = 10;
         const maxContentWidth = pageWidth - margin * 2;
         const maxContentHeight = pageHeight - margin * 2;
@@ -587,7 +629,7 @@ export default function ExportView({ students, teachers, classrooms, courses, en
         const posY = margin + (maxContentHeight - finalHeight) / 2;
 
         if (i > 0) {
-          pdf.addPage('a4', 'landscape');
+          pdf.addPage('a4', orientation);
         }
 
         pdf.addImage(imgData, 'JPEG', posX, posY, finalWidth, finalHeight);
@@ -619,11 +661,11 @@ export default function ExportView({ students, teachers, classrooms, courses, en
             <div>{gridData.headerRight}</div>
           </div>
         )}
-        <table className="w-full border-collapse min-w-[700px] shadow-sm text-sm">
+        <table className="border-collapse shadow-sm text-sm mx-auto" style={{ tableLayout: 'fixed', width: orientation === 'landscape' ? '1000px' : '700px' }}>
           <thead>
             <tr>
               {gridData.headers.map((h, i) => (
-                <th key={i} className="py-3 px-4 border text-center font-bold text-base" style={{ backgroundColor: theme.cssBg, color: theme.cssText, borderColor: theme.cssBorder }}>
+                <th key={i} className="py-3 px-2 border text-center align-middle font-bold text-base" style={{ backgroundColor: theme.cssBg, color: theme.cssText, borderColor: theme.cssBorder, width: i === 0 ? '8%' : i === 1 ? '12%' : '16%' }}>
                   {h}
                 </th>
               ))}
@@ -633,8 +675,10 @@ export default function ExportView({ students, teachers, classrooms, courses, en
             {gridData.rows.map((row, rIdx) => (
               <tr key={rIdx} className="bg-white">
                 {row.map((cell, cIdx) => (
-                  <td key={cIdx} className={`py-3 px-4 border text-center align-middle whitespace-pre-wrap leading-relaxed text-[#2D2D2A] ${cIdx === 0 ? 'text-base font-bold' : ''}`} style={{ borderColor: theme.cssBorder }}>
-                    {renderReactRichText(cell)}
+                  <td key={cIdx} className={`p-1 border text-center align-middle text-[#2D2D2A] ${cIdx === 0 ? 'text-base font-bold' : ''}`} style={{ borderColor: theme.cssBorder, overflow: 'hidden' }}>
+                    <div style={{ height: orientation === 'landscape' ? '50px' : '80px', overflow: 'hidden', display: cIdx < 2 ? 'flex' : 'block', flexDirection: cIdx < 2 ? 'column' : 'row', justifyContent: cIdx < 2 ? 'center' : 'flex-start', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                      {renderReactRichText(cell)}
+                    </div>
                   </td>
                 ))}
               </tr>
@@ -768,9 +812,9 @@ export default function ExportView({ students, teachers, classrooms, courses, en
                           </label>
                         ))}
                       </div>
-                    </div>
-                  );
-                })}
+    </div>
+  );
+})}
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-2">
@@ -839,7 +883,7 @@ export default function ExportView({ students, teachers, classrooms, courses, en
                 {templateTags.map(tag => (
                   <button 
                     key={tag}
-                    onClick={() => setCourseInfoTemplate(prev => prev + tag)}
+                    onClick={() => insertTag(tag)}
                     className="px-2 py-1 text-xs font-medium bg-white border border-[#D9D4C7] text-[#5A5A40] rounded hover:bg-[#E5E1D5] hover:text-[#4A4A3A] transition-colors shadow-sm"
                   >
                     {tag}
@@ -849,7 +893,7 @@ export default function ExportView({ students, teachers, classrooms, courses, en
                 {styleTags.map(tag => (
                   <button 
                     key={tag}
-                    onClick={() => setCourseInfoTemplate(prev => prev + tag)}
+                    onClick={() => insertTag(tag)}
                     className="px-2 py-1 text-xs font-medium bg-white border border-[#D9D4C7] text-[#5A5A40] rounded hover:bg-[#E5E1D5] hover:text-[#4A4A3A] transition-colors shadow-sm"
                   >
                     {tag}
@@ -857,6 +901,7 @@ export default function ExportView({ students, teachers, classrooms, courses, en
                 ))}
               </div>
               <textarea
+                ref={templateTextareaRef}
                 value={courseInfoTemplate}
                 onChange={e => setCourseInfoTemplate(e.target.value)}
                 placeholder="在此編輯課程顯示格式..."
@@ -866,7 +911,25 @@ export default function ExportView({ students, teachers, classrooms, courses, en
           </div>
 
           <div className="space-y-3">
-            <h4 className="text-sm font-bold text-[#8A8475] uppercase tracking-wider">表格風格</h4>
+            <h4 className="text-sm font-bold text-[#8A8475] uppercase tracking-wider">版面方向</h4>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setOrientation('portrait')}
+                className={`flex-1 py-2 rounded font-bold transition-colors ${orientation === 'portrait' ? 'bg-[#5A5A40] text-white' : 'bg-white border border-[#D9D4C7] text-[#4A4A3A]'}`}
+              >
+                直式
+              </button>
+              <button
+                onClick={() => setOrientation('landscape')}
+                className={`flex-1 py-2 rounded font-bold transition-colors ${orientation === 'landscape' ? 'bg-[#5A5A40] text-white' : 'bg-white border border-[#D9D4C7] text-[#4A4A3A]'}`}
+              >
+                橫式
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <h4 className="text-sm font-bold text-[#8A8475] uppercase tracking-wider">表格配色</h4>
             <div className="grid grid-cols-2 gap-3">
               {(Object.keys(THEMES) as ThemeKey[]).map(key => (
                 <label key={key} className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors border ${selectedTheme === key ? 'bg-[#F9F8F4] border-[#5A5A40] shadow-sm' : 'bg-white border-[#D9D4C7] hover:border-[#BCB6A4]'}`}>
@@ -1040,10 +1103,10 @@ export default function ExportView({ students, teachers, classrooms, courses, en
       <div 
         ref={pdfContainerRef} 
         className="fixed left-[-9999px] top-0 pointer-events-none"
-        style={{ width: '1080px' }}
+        style={{ width: orientation === 'landscape' ? '1080px' : '768px' }}
       >
         {allExportItems.map((item, idx) => (
-          <div key={idx} className="bg-white p-8 mb-8" style={{ width: '1080px' }}>
+          <div key={idx} className="bg-white p-8 mb-8" style={{ width: orientation === 'landscape' ? '1080px' : '768px' }}>
             {item.gridData.titleRow && (
               <h2 className="text-2xl font-bold text-center mb-6 text-[#2D2D2A]">
                 {item.gridData.titleRow}
@@ -1060,17 +1123,18 @@ export default function ExportView({ students, teachers, classrooms, courses, en
                 <div>{item.gridData.headerRight}</div>
               </div>
             )}
-            <table className="w-full border-collapse text-sm">
+            <table className="border-collapse text-sm mx-auto" style={{ tableLayout: 'fixed', width: orientation === 'landscape' ? '1000px' : '700px' }}>
               <thead>
                 <tr>
                   {item.gridData.headers.map((h, hIdx) => (
                     <th 
                       key={hIdx} 
-                      className="py-3 px-3 border text-center font-bold text-base"
+                      className="py-3 px-2 border text-center align-middle font-bold text-base"
                       style={{ 
                         backgroundColor: THEMES[selectedTheme].cssBg, 
                         color: THEMES[selectedTheme].cssText, 
-                        borderColor: THEMES[selectedTheme].cssBorder 
+                        borderColor: THEMES[selectedTheme].cssBorder,
+                        width: hIdx === 0 ? '8%' : hIdx === 1 ? '12%' : '16%'
                       }}
                     >
                       {h}
@@ -1084,10 +1148,12 @@ export default function ExportView({ students, teachers, classrooms, courses, en
                     {row.map((cell, cIdx) => (
                       <td 
                         key={cIdx} 
-                        className={`py-3 px-3 border text-center align-middle whitespace-pre-wrap leading-relaxed text-[#2D2D2A] ${cIdx === 0 ? 'text-base font-bold' : 'text-sm'}`}
-                        style={{ borderColor: THEMES[selectedTheme].cssBorder }}
+                        className={`p-1 border text-center align-middle text-[#2D2D2A] ${cIdx === 0 ? 'text-base font-bold' : ''}`}
+                        style={{ borderColor: THEMES[selectedTheme].cssBorder, overflow: 'hidden' }}
                       >
-                        {renderReactRichText(cell)}
+                        <div style={{ height: orientation === 'landscape' ? '50px' : '80px', overflow: 'hidden', display: cIdx < 2 ? 'flex' : 'block', flexDirection: cIdx < 2 ? 'column' : 'row', justifyContent: cIdx < 2 ? 'center' : 'flex-start', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                          {renderReactRichText(cell)}
+                        </div>
                       </td>
                     ))}
                   </tr>
@@ -1106,6 +1172,3 @@ export default function ExportView({ students, teachers, classrooms, courses, en
     </div>
   );
 }
-
-
-
