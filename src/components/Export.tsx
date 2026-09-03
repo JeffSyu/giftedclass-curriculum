@@ -124,15 +124,15 @@ export default function ExportView({ students, teachers, classrooms, courses, en
   const [filterStudentCategory, setFilterStudentCategory] = useState<string>('');
 
   // Settings
-  const [showTitle, setShowTitle] = useState(false);
-  const [titleText, setTitleText] = useState('課表');
-  const [showEntityName, setShowEntityName] = useState(true);
+  const [showTitle, setShowTitle] = useState(true);
+  const [titleText, setTitleText] = useState('特殊教育課表');
+  const [showEntityName, setShowEntityName] = useState(false);
   const [entityNamePosition, setEntityNamePosition] = useState<'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'>('bottom-left');
   const [selectedTheme, setSelectedTheme] = useState<ThemeKey>('default');
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('landscape');
   
   // Course Info Template
-  const [courseInfoTemplate, setCourseInfoTemplate] = useState<string>("[課程名稱]\n[教師]\n[教室]");
+  const [courseInfoTemplate, setCourseInfoTemplate] = useState<string>("");
   const templateTags = ['[課程名稱]', '[年級]', '[類別]', '[教師]', '[教室]', '[學生]'];
   const styleTags = ['[粗體]', '[斜體]', '[底線]', '[大字體]', '[小字體]', '[預設]'];
 
@@ -755,10 +755,10 @@ export default function ExportView({ students, teachers, classrooms, courses, en
         <div className="flex bg-[#F9F8F4] border-b border-[#E5E1D5] px-4 pt-4 gap-6">
           <button className={`pb-3 font-medium text-sm focus:outline-none transition-colors ${exportType === 'student' ? 'border-b-2 border-[#5A5A40] text-[#4A4A3A] font-bold' : 'text-[#8A8475] border-b-2 border-transparent hover:text-[#5A5A40]'}`} onClick={() => {setExportType('student'); setSelectedIds([]);}}>學生課表</button>
           <button className={`pb-3 font-medium text-sm focus:outline-none transition-colors ${exportType === 'teacher' ? 'border-b-2 border-[#5A5A40] text-[#4A4A3A] font-bold' : 'text-[#8A8475] border-b-2 border-transparent hover:text-[#5A5A40]'}`} onClick={() => {setExportType('teacher'); setSelectedIds([]);}}>教師課表</button>
-          <button className={`pb-3 font-medium text-sm focus:outline-none transition-colors ${exportType === 'classroom' ? 'border-b-2 border-[#5A5A40] text-[#4A4A3A] font-bold' : 'text-[#8A8475] border-b-2 border-transparent hover:text-[#5A5A40]'}`} onClick={() => {setExportType('classroom'); setSelectedIds([]);}}>教室使用表</button>
-          <button className={`pb-3 font-medium text-sm focus:outline-none transition-colors ${exportType === 'grade' ? 'border-b-2 border-[#5A5A40] text-[#4A4A3A] font-bold' : 'text-[#8A8475] border-b-2 border-transparent hover:text-[#5A5A40]'}`} onClick={() => {setExportType('grade'); setSelectedIds([]);}}>年級總表</button>
-          <button className={`pb-3 font-medium text-sm focus:outline-none transition-colors ${exportType === 'attendance' ? 'border-b-2 border-[#5A5A40] text-[#4A4A3A] font-bold' : 'text-[#8A8475] border-b-2 border-transparent hover:text-[#5A5A40]'}`} onClick={() => {setExportType('attendance'); setSelectedIds([]);}}>週點名單</button>
+          <button className={`pb-3 font-medium text-sm focus:outline-none transition-colors ${exportType === 'classroom' ? 'border-b-2 border-[#5A5A40] text-[#4A4A3A] font-bold' : 'text-[#8A8475] border-b-2 border-transparent hover:text-[#5A5A40]'}`} onClick={() => {setExportType('classroom'); setSelectedIds([]);}}>教室課表</button>
+          <button className={`pb-3 font-medium text-sm focus:outline-none transition-colors ${exportType === 'grade' ? 'border-b-2 border-[#5A5A40] text-[#4A4A3A] font-bold' : 'text-[#8A8475] border-b-2 border-transparent hover:text-[#5A5A40]'}`} onClick={() => {setExportType('grade'); setSelectedIds([]);}}>年級課表</button>
           <button className={`pb-3 font-medium text-sm focus:outline-none transition-colors ${exportType === 'pullout' ? 'border-b-2 border-[#5A5A40] text-[#4A4A3A] font-bold' : 'text-[#8A8475] border-b-2 border-transparent hover:text-[#5A5A40]'}`} onClick={() => {setExportType('pullout'); setSelectedIds([]);}}>原班抽課表</button>
+          <button className={`pb-3 font-medium text-sm focus:outline-none transition-colors ${exportType === 'attendance' ? 'border-b-2 border-[#5A5A40] text-[#4A4A3A] font-bold' : 'text-[#8A8475] border-b-2 border-transparent hover:text-[#5A5A40]'}`} onClick={() => {setExportType('attendance'); setSelectedIds([]);}}>週點名單</button>
 
         </div>
         
@@ -839,44 +839,40 @@ export default function ExportView({ students, teachers, classrooms, courses, en
         
         <div className="space-y-6">
           <div className="space-y-3">
-            <h4 className="text-sm font-bold text-[#8A8475] uppercase tracking-wider">版面配置</h4>
+            <h4 className="text-sm font-bold text-[#8A8475] uppercase tracking-wider">表首表尾</h4>
             
             <label className="flex items-center gap-3 p-3 bg-white border border-[#D9D4C7] rounded-lg">
               <input type="checkbox" checked={showTitle} onChange={e => setShowTitle(e.target.checked)} className="rounded text-[#5A5A40] focus:ring-[#5A5A40] border-[#D9D4C7]" />
               <div className="flex-1 flex items-center gap-3">
                 <span className="text-sm font-medium text-[#2D2D2A]">標題列</span>
                 {showTitle && (
-                  <input type="text" value={titleText} onChange={e => setTitleText(e.target.value)} placeholder="請輸入標題" className="flex-1 px-3 py-1 text-sm bg-[#F9F8F4] border border-[#D9D4C7] rounded focus:ring-1 focus:ring-[#5A5A40] outline-none" />
+                  <input type="text" value={titleText} onChange={e => setTitleText(e.target.value)} placeholder="請輸入標題" className="flex-1 px-3 py-0 text-sm bg-[#F9F8F4] border border-[#D9D4C7] rounded focus:ring-1 focus:ring-[#5A5A40] outline-none" />
                 )}
               </div>
             </label>
-
-            <div className="flex flex-col gap-2 p-3 bg-white border border-[#D9D4C7] rounded-lg">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input type="checkbox" checked={showEntityName} onChange={e => setShowEntityName(e.target.checked)} className="rounded text-[#5A5A40] focus:ring-[#5A5A40] border-[#D9D4C7]" />
-                <span className="text-sm font-medium text-[#2D2D2A]">顯示名稱</span>
-              </label>
-              {showEntityName && (
-                <div className="pl-7 mt-1">
-                  <select 
-                    value={entityNamePosition}
-                    onChange={e => setEntityNamePosition(e.target.value as any)}
-                    className="w-full px-3 py-1.5 text-sm bg-[#F9F8F4] border border-[#D9D4C7] rounded-md focus:ring-1 focus:ring-[#5A5A40] outline-none text-[#4A4A3A]"
-                  >
-                    <option value="top-left">表頭左上</option>
-                    <option value="top-right">表頭右上</option>
-                    <option value="bottom-left">表尾左下</option>
-                    <option value="bottom-right">表尾右下</option>
-                  </select>
-                </div>
-              )}
-            </div>
+            <label className="flex items-center gap-3 p-3 bg-white border border-[#D9D4C7] rounded-lg">
+              <input type="checkbox" checked={showEntityName} onChange={e => setShowEntityName(e.target.checked)} className="rounded text-[#5A5A40] focus:ring-[#5A5A40] border-[#D9D4C7]" />
+              <div className="flex-1 flex items-center gap-3">
+                <span className="text-sm font-medium text-[#2D2D2A]">名稱</span>
+                {showEntityName && (
+                    <select 
+                      value={entityNamePosition}
+                      onChange={e => setEntityNamePosition(e.target.value as any)}
+                      className="flex-1 px-3 py-0 text-sm bg-[#F9F8F4] border border-[#D9D4C7] rounded-md focus:ring-1 focus:ring-[#5A5A40] outline-none text-[#4A4A3A]"
+                    >
+                      <option value="top-left">表首左上</option>
+                      <option value="top-right">表首右上</option>
+                      <option value="bottom-left">表尾左下</option>
+                      <option value="bottom-right">表尾右下</option>
+                    </select>
+                )}
+              </div>
+            </label>
           </div>
 
           <div className="space-y-3">
             <div className="flex justify-between items-end">
               <h4 className="text-sm font-bold text-[#8A8475] uppercase tracking-wider">課程資訊</h4>
-              <span className="text-xs text-[#8A8475]">可點擊標籤插入或自由編輯</span>
             </div>
             <div className="bg-white border border-[#D9D4C7] rounded-lg overflow-hidden flex flex-col">
               <div className="p-2 border-b border-[#E5E1D5] bg-[#F9F8F4] flex flex-wrap gap-1.5">
@@ -930,10 +926,10 @@ export default function ExportView({ students, teachers, classrooms, courses, en
 
           <div className="space-y-3">
             <h4 className="text-sm font-bold text-[#8A8475] uppercase tracking-wider">表格配色</h4>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-4 gap-3">
               {(Object.keys(THEMES) as ThemeKey[]).map(key => (
-                <label key={key} className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors border ${selectedTheme === key ? 'bg-[#F9F8F4] border-[#5A5A40] shadow-sm' : 'bg-white border-[#D9D4C7] hover:border-[#BCB6A4]'}`}>
-                  <input type="radio" name="theme" checked={selectedTheme === key} onChange={() => setSelectedTheme(key as ThemeKey)} className="text-[#5A5A40] focus:ring-[#5A5A40]" />
+                <label key={key} className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors border ${selectedTheme === key ? 'bg-[#F9F8F4] border-[#5A5A40] shadow-sm' : 'bg-white border-[#D9D4C7] hover:border-[#BCB6A4]'}`} style={{ backgroundColor: THEMES[key].cssBg, borderColor: THEMES[key].cssBorder }}>
+                  <input type="radio" name="theme" checked={selectedTheme === key} onChange={() => setSelectedTheme(key as ThemeKey)} className="text-[#5A5A40] focus:ring-[#5A5A40] hidden" />
                   <div className="flex items-center gap-2">
                     <div className="w-4 h-4 rounded-full border shadow-sm" style={{ backgroundColor: THEMES[key].cssBg, borderColor: THEMES[key].cssBorder }}></div>
                     <span className="text-sm font-medium text-[#2D2D2A]">{THEMES[key].name}</span>
