@@ -132,7 +132,7 @@ export default function ExportView({ students, teachers, classrooms, courses, en
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('landscape');
   
   // Course Info Template
-  const [courseInfoTemplate, setCourseInfoTemplate] = useState<string>("");
+  const [courseInfoTemplate, setCourseInfoTemplate] = useState<string>("[大字體][粗體][課程名稱]");
   const templateTags = ['[課程名稱]', '[年級]', '[類別]', '[教師]', '[教室]', '[學生]'];
   const styleTags = ['[粗體]', '[斜體]', '[底線]', '[大字體]', '[小字體]', '[預設]'];
 
@@ -321,10 +321,19 @@ export default function ExportView({ students, teachers, classrooms, courses, en
           const enrollment = enrollments.find(e => e.studentId === student.id);
           return (enrollment?.courseIds || []).includes(c.id);
         });
-        const gridData = generateGridData(studentCourses, student.name, '學生');
+        
+        let prefix = '';
+        if (student.grade && student.className) {
+          prefix = `${student.grade}年${student.className}班 `;
+        } else if (student.grade) {
+          prefix = `${student.grade}年級 `;
+        }
+        const displayName = prefix ? `${prefix}${student.name}` : student.name;
+        
+        const gridData = generateGridData(studentCourses, displayName, '學生', student.className, student.grade);
         result.push({
-          title: student.name || student.id,
-          filename: student.name || student.id,
+          title: displayName || student.id,
+          filename: displayName || student.id,
           gridData
         });
       });
@@ -374,7 +383,7 @@ export default function ExportView({ students, teachers, classrooms, courses, en
           e.courseIds.forEach(cid => courseIds.add(cid));
         });
         const pulloutCourses = courses.filter(c => courseIds.has(c.id));
-        const gridData = generateGridData(pulloutCourses, `${grade}年級${className}班`, '班級', className, grade);
+        const gridData = generateGridData(pulloutCourses, `${grade}年${className}班`, '班級', className, grade);
         result.push({
           title: `${grade}年級${className}班 原班抽課表`,
           filename: `${grade}年級${className}班_原班抽課表`,
