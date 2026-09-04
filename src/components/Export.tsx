@@ -77,9 +77,10 @@ const renderReactRichText = (input: string) => {
         if (chunk.bold) classes.push('font-bold');
         if (chunk.italic) classes.push('italic');
         if (chunk.underline) classes.push('underline');
-        if (chunk.size === 'large') classes.push('text-lg');
-        else if (chunk.size === 'small') classes.push('text-xs');
+        if (chunk.size === 'large') classes.push('text-[14pt]');
+        else if (chunk.size === 'small') classes.push('text-[10pt]');
         
+        if (chunk.size !== 'large' && chunk.size !== 'small') classes.push('text-[12pt]');
         return <span key={i} className={classes.join(' ')}>{chunk.text}</span>;
       })}
     </>
@@ -92,14 +93,14 @@ const getExcelRichText = (input: string, baseFontName = 'Microsoft JhengHei', is
   }
   
   const chunks = parseStyledText(input);
-  const baseSize = isFirstCol ? 12 : 11;
+  const baseSize = isFirstCol ? 14 : 12; // 節次14pt, 課程資訊預設12pt
   const baseBold = isFirstCol;
   
   return {
     richText: chunks.map(chunk => {
       let size = baseSize;
-      if (chunk.size === 'large') size = baseSize + 3;
-      if (chunk.size === 'small') size = baseSize - 2;
+      if (chunk.size === 'large') size = 14;
+      if (chunk.size === 'small') size = 10;
       
       return {
         text: chunk.text,
@@ -408,29 +409,29 @@ export default function ExportView({ students, teachers, classrooms, courses, en
     const themeColor = THEMES[selectedTheme];
     let currentRow = 1;
     worksheet.pageSetup.orientation = orientation;
+    worksheet.pageSetup.margins = { left: 0.25, right: 0.25, top: 0.75, bottom: 0.75, header: 0.3, footer: 0.3 }; // Narrow margins
 
     if (orientation === 'portrait') {
       worksheet.columns = [
-        { width: 6 },
-        { width: 10 },
-        { width: 14 },
-        { width: 14 },
-        { width: 14 },
-        { width: 14 },
-        { width: 14 },
+        { width: 7.2 },
+        { width: 7.5 },
+        { width: 17 },
+        { width: 17 },
+        { width: 17 },
+        { width: 17 },
+        { width: 17 },
       ];
     } else {
       worksheet.columns = [
-        { width: 8 },
-        { width: 14 },
-        { width: 22 },
-        { width: 22 },
-        { width: 22 },
-        { width: 22 },
-        { width: 22 },
+        { width: 11 },
+        { width: 7.5 },
+        { width: 24 },
+        { width: 24 },
+        { width: 24 },
+        { width: 24 },
+        { width: 24 },
       ];
     }
-
 
     const getColLetter = (colNum: number) => {
       let temp, letter = '';
@@ -452,7 +453,6 @@ export default function ExportView({ students, teachers, classrooms, courses, en
       currentRow += 2; // skip a row
     }
 
-
     if (gridData.subTitleRow) {
       const subTitleCell = worksheet.getCell(`A${currentRow}`);
               if (typeof gridData.subTitleRow === 'string' && /\[(粗體|斜體|底線|大字體|小字體|預設)\]/.test(gridData.subTitleRow)) {
@@ -461,7 +461,7 @@ export default function ExportView({ students, teachers, classrooms, courses, en
           subTitleCell.value = gridData.subTitleRow;
         }
         if (!subTitleCell.value || typeof subTitleCell.value !== 'object' || !('richText' in subTitleCell.value)) {
-          subTitleCell.font = { name: 'Microsoft JhengHei', size: 12 };
+          subTitleCell.font = { name: 'Microsoft JhengHei', size: 14 };
         }
         subTitleCell.alignment = { horizontal: 'center', vertical: 'top', wrapText: true };
       worksheet.mergeCells(`A${currentRow}:${getColLetter(gridData.headers.length)}${currentRow}`);
@@ -474,14 +474,14 @@ export default function ExportView({ students, teachers, classrooms, courses, en
       if (gridData.headerLeft) {
         const hCell = worksheet.getCell(`A${currentRow}`);
         hCell.value = gridData.headerLeft;
-        hCell.font = { name: 'Microsoft JhengHei', bold: true };
+        hCell.font = { name: 'Microsoft JhengHei', bold: true, size: 14 };
         hCell.alignment = { horizontal: 'left', vertical: 'middle' };
       }
       if (gridData.headerRight) {
         const lastCol = getColLetter(gridData.headers.length);
         const hCell = worksheet.getCell(`${lastCol}${currentRow}`);
         hCell.value = gridData.headerRight;
-        hCell.font = { name: 'Microsoft JhengHei', bold: true };
+        hCell.font = { name: 'Microsoft JhengHei', bold: true, size: 14 };
         hCell.alignment = { horizontal: 'right', vertical: 'middle' };
       }
       currentRow += 1;
@@ -492,7 +492,7 @@ export default function ExportView({ students, teachers, classrooms, courses, en
       const cell = headerRow.getCell(i + 1);
       cell.value = h;
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: themeColor.headerBg } };
-      cell.font = { bold: true, color: { argb: themeColor.headerText }, name: 'Microsoft JhengHei', size: 12 };
+      cell.font = { bold: true, color: { argb: themeColor.headerText }, name: 'Microsoft JhengHei', size: 14 };
       cell.alignment = { horizontal: 'center', vertical: 'middle' };
       cell.border = {
         top: { style: 'thin', color: { argb: themeColor.border } },
@@ -516,7 +516,7 @@ export default function ExportView({ students, teachers, classrooms, courses, en
           cell.value = val;
         }
         if (!cell.value || typeof cell.value !== 'object' || !('richText' in cell.value)) {
-          cell.font = { name: 'Microsoft JhengHei', bold: i === 0, size: i === 0 ? 12 : 11 };
+          cell.font = { name: 'Microsoft JhengHei', bold: i === 0, size: i === 0 ? 14 : (i === 1 ? 11 : 12) };
         }
         cell.alignment = { horizontal: 'center', vertical: i < 2 ? 'middle' : 'top', wrapText: true };
         cell.border = {
@@ -528,38 +528,61 @@ export default function ExportView({ students, teachers, classrooms, courses, en
         const lines = val.split('\n').length;
         if (lines > maxLines) maxLines = lines;
       });
-      row.height = orientation === 'landscape' ? 45 : 70;
+      // row.height removed to auto fit, we'll set min height using hidden elements or let Excel handle it, but exceljs doesn't natively do min-height easily.
+      // So we will set height dynamically based on lines
+      const minHeight = orientation === 'landscape' ? (79 * 0.75) : (104 * 0.75); // approx px to pt conversion (0.75)
+      const calculatedHeight = maxLines * 16 + 10; // 16pt per line + padding
+      row.height = Math.max(minHeight, calculatedHeight);
       currentRow++;
     });
+    
+    // Add thick outer border to the table
+    let tableStartRow = 1;
+    for (let i = 1; i < currentRow; i++) {
+        const firstCell = worksheet.getCell('A' + i);
+        if (firstCell.value === gridData.headers[0]) {
+            tableStartRow = i;
+            break;
+        }
+    }
+    const tableEndRow = tableStartRow + gridData.rows.length;
+    
+    for (let r = tableStartRow; r <= tableEndRow; r++) {
+        for (let c = 1; c <= gridData.headers.length; c++) {
+            const cell = worksheet.getCell(r, c);
+            const currentBorder = cell.border || {};
+            cell.border = {
+                ...currentBorder,
+                top: r === tableStartRow ? { style: 'medium', color: { argb: themeColor.border } } : currentBorder.top,
+                bottom: r === tableEndRow ? { style: 'medium', color: { argb: themeColor.border } } : currentBorder.bottom,
+                left: c === 1 ? { style: 'medium', color: { argb: themeColor.border } } : currentBorder.left,
+                right: c === gridData.headers.length ? { style: 'medium', color: { argb: themeColor.border } } : currentBorder.right,
+            };
+        }
+    }
 
     if (gridData.footerLeft || gridData.footerRight) {
       currentRow++; // empty row
       if (gridData.footerLeft) {
         const fCell = worksheet.getCell(`A${currentRow}`);
         fCell.value = gridData.footerLeft;
-        fCell.font = { name: 'Microsoft JhengHei', bold: true };
+        fCell.font = { name: 'Microsoft JhengHei', bold: true, size: 14 };
         fCell.alignment = { horizontal: 'left', vertical: 'middle' };
       }
       if (gridData.footerRight) {
         const lastCol = getColLetter(gridData.headers.length);
         const fCell = worksheet.getCell(`${lastCol}${currentRow}`);
         fCell.value = gridData.footerRight;
-        fCell.font = { name: 'Microsoft JhengHei', bold: true };
+        fCell.font = { name: 'Microsoft JhengHei', bold: true, size: 14 };
         fCell.alignment = { horizontal: 'right', vertical: 'middle' };
       }
     }
 
-    // Column widths
+    // Attendance column widths
     if (exportType === 'attendance') {
       worksheet.getColumn(1).width = 16;
       for (let i = 2; i <= gridData.headers.length; i++) {
         worksheet.getColumn(i).width = 16;
-      }
-    } else {
-      worksheet.getColumn(1).width = 12;
-      worksheet.getColumn(2).width = 16;
-      for (let i = 3; i <= gridData.headers.length; i++) {
-        worksheet.getColumn(i).width = 22;
       }
     }
   };
@@ -620,7 +643,7 @@ export default function ExportView({ students, teachers, classrooms, courses, en
         const imgData = canvas.toDataURL('image/jpeg', 0.95);
         const pageWidth = orientation === 'landscape' ? 297 : 210;
         const pageHeight = orientation === 'landscape' ? 210 : 297;
-        const margin = 10;
+        const margin = 6.35; // Narrow margin (~0.25 inches)
         const maxContentWidth = pageWidth - margin * 2;
         const maxContentHeight = pageHeight - margin * 2;
 
@@ -661,7 +684,7 @@ export default function ExportView({ students, teachers, classrooms, courses, en
     const theme = THEMES[selectedTheme];
     return (
       <div className="bg-white p-6 rounded-lg overflow-x-auto border border-[#E5E1D5]">
-        {gridData.titleRow && <h2 className="text-2xl font-bold text-center mb-6 text-[#2D2D2A]">{gridData.titleRow}</h2>}
+        {gridData.titleRow && <h2 className="text-[16pt] font-bold text-center mb-6 text-[#2D2D2A]">{gridData.titleRow}</h2>}
         {gridData.subTitleRow && <div className="text-m text-[#4A4A3A] mb-4 whitespace-pre-wrap leading-relaxed text-center">{renderReactRichText(gridData.subTitleRow)}</div>}
         
         {(gridData.headerLeft || gridData.headerRight) && (
@@ -670,11 +693,11 @@ export default function ExportView({ students, teachers, classrooms, courses, en
             <div>{gridData.headerRight}</div>
           </div>
         )}
-        <table className="border-collapse shadow-sm text-sm mx-auto" style={{ tableLayout: 'fixed', width: orientation === 'landscape' ? '1000px' : '700px' }}>
+        <table className="border-collapse shadow-sm text-[12pt] mx-auto border-[3px] border-[#2D2D2A]" style={{ tableLayout: 'fixed', width: orientation === 'landscape' ? '1000px' : '700px' }}>
           <thead>
             <tr>
               {gridData.headers.map((h, i) => (
-                <th key={i} className="py-3 px-2 border text-center align-middle font-bold text-base" style={{ backgroundColor: theme.cssBg, color: theme.cssText, borderColor: theme.cssBorder, width: i === 0 ? '8%' : i === 1 ? '12%' : '16%' }}>
+                <th key={i} className="py-3 px-2 border border-[#2D2D2A] text-center align-middle font-bold text-[14pt]" style={{ backgroundColor: theme.cssBg, color: theme.cssText, width: i === 0 ? '8%' : i === 1 ? '12%' : '16%' }}>
                   {h}
                 </th>
               ))}
@@ -684,8 +707,8 @@ export default function ExportView({ students, teachers, classrooms, courses, en
             {gridData.rows.map((row, rIdx) => (
               <tr key={rIdx} className="bg-white">
                 {row.map((cell, cIdx) => (
-                  <td key={cIdx} className={`p-1 border text-center align-middle text-[#2D2D2A] ${cIdx === 0 ? 'text-base font-bold' : ''}`} style={{ borderColor: theme.cssBorder, overflow: 'hidden' }}>
-                    <div style={{ height: orientation === 'landscape' ? '50px' : '80px', overflow: 'hidden', display: cIdx < 2 ? 'flex' : 'block', flexDirection: cIdx < 2 ? 'column' : 'row', justifyContent: cIdx < 2 ? 'center' : 'flex-start', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  <td key={cIdx} className={`p-1 border border-[#2D2D2A] text-center align-middle text-[#2D2D2A] ${cIdx === 0 ? 'text-[14pt] font-bold' : (cIdx === 1 ? 'text-[11pt]' : 'text-[12pt]')}`}>
+                    <div style={{ minHeight: orientation === 'landscape' ? '79px' : '104px', height: '100%', display: cIdx < 2 ? 'flex' : 'block', flexDirection: cIdx < 2 ? 'column' : 'row', justifyContent: cIdx < 2 ? 'center' : 'flex-start', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                       {renderReactRichText(cell)}
                     </div>
                   </td>
@@ -1113,7 +1136,7 @@ export default function ExportView({ students, teachers, classrooms, courses, en
         {allExportItems.map((item, idx) => (
           <div key={idx} className="bg-white p-8 mb-8" style={{ width: orientation === 'landscape' ? '1080px' : '768px' }}>
             {item.gridData.titleRow && (
-              <h2 className="text-2xl font-bold text-center mb-6 text-[#2D2D2A]">
+              <h2 className="text-[16pt] font-bold text-center mb-6 text-[#2D2D2A]">
                 {item.gridData.titleRow}
               </h2>
             )}
@@ -1128,17 +1151,16 @@ export default function ExportView({ students, teachers, classrooms, courses, en
                 <div>{item.gridData.headerRight}</div>
               </div>
             )}
-            <table className="border-collapse text-sm mx-auto" style={{ tableLayout: 'fixed', width: orientation === 'landscape' ? '1000px' : '700px' }}>
+            <table className="border-collapse text-[12pt] mx-auto border-[3px] border-[#2D2D2A]" style={{ tableLayout: 'fixed', width: orientation === 'landscape' ? '1000px' : '700px' }}>
               <thead>
                 <tr>
                   {item.gridData.headers.map((h, hIdx) => (
                     <th 
                       key={hIdx} 
-                      className="py-3 px-2 border text-center align-middle font-bold text-base"
+                      className="py-3 px-2 border border-[#2D2D2A] border-[1px] text-center align-middle font-bold text-[14pt]"
                       style={{ 
                         backgroundColor: THEMES[selectedTheme].cssBg, 
                         color: THEMES[selectedTheme].cssText, 
-                        borderColor: THEMES[selectedTheme].cssBorder,
                         width: hIdx === 0 ? '8%' : hIdx === 1 ? '12%' : '16%'
                       }}
                     >
@@ -1153,10 +1175,10 @@ export default function ExportView({ students, teachers, classrooms, courses, en
                     {row.map((cell, cIdx) => (
                       <td 
                         key={cIdx} 
-                        className={`p-1 border text-center align-middle text-[#2D2D2A] ${cIdx === 0 ? 'text-base font-bold' : ''}`}
-                        style={{ borderColor: THEMES[selectedTheme].cssBorder, overflow: 'hidden' }}
+                        className={`p-1 border border-[#2D2D2A] border-[1px] text-center align-middle text-[#2D2D2A] ${cIdx === 0 ? 'text-[14pt] font-bold' : (cIdx === 1 ? 'text-[11pt]' : 'text-[12pt]')}`}
+                        style={{ overflow: 'hidden' }}
                       >
-                        <div style={{ height: orientation === 'landscape' ? '50px' : '80px', overflow: 'hidden', display: cIdx < 2 ? 'flex' : 'block', flexDirection: cIdx < 2 ? 'column' : 'row', justifyContent: cIdx < 2 ? 'center' : 'flex-start', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                        <div style={{ minHeight: orientation === 'landscape' ? '79px' : '104px', height: '100%', display: cIdx < 2 ? 'flex' : 'block', flexDirection: cIdx < 2 ? 'column' : 'row', justifyContent: cIdx < 2 ? 'center' : 'flex-start', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                           {renderReactRichText(cell)}
                         </div>
                       </td>
